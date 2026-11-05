@@ -1,0 +1,10 @@
+ARENA v2 - cara update dari HP
+
+1. Buka repo Game-fps di GitHub -> Add file -> Upload files.
+2. Pilih SEMUA file di folder ini (kecuali BACA-DULU.txt). Nama yang sama otomatis menimpa yang lama.
+   File baru: WeaponDefs.java
+3. Commit changes. Tab Actions akan membangun APK otomatis (3-6 menit).
+4. Unduh artifact ArenaFPS-apk, ekstrak, install app-debug.apk.
+5. Semua HP harus memasang versi yang sama.
+
+Mode: LAWAN BOT (sendirian), BUAT ROOM (jadi host, bot opsional), GABUNG (ketik IP host).

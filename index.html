@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Arena</title>
+<style>
+  :root{
+    --bg:#0b0b0d; --panel:#121215; --line:#2a2a30; --text:#ececee; --dim:#8d8d96; --dimmer:#5d5d66; --danger:#ff5b5b;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);overflow:hidden;
+    overscroll-behavior:none;touch-action:none;font-variant-numeric:tabular-nums}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+  #fx{pointer-events:none;z-index:2}
+  button{font:inherit}
+
+  /* ---------- tombol & input ---------- */
+  .btn{height:40px;padding:0 20px;border-radius:4px;border:1px solid var(--line);background:transparent;color:var(--text);
+    font-weight:600;font-size:13px;letter-spacing:.04em;cursor:pointer}
+  .btn:active{opacity:.7}
+  .btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+  input{font:inherit;font-size:15px;color:var(--text);background:transparent;border:0;border-bottom:1px solid var(--line);
+    padding:8px 0;width:170px;outline:none;border-radius:0;-webkit-user-select:text;user-select:text}
+  input:focus{border-bottom-color:var(--text)}
+  input::placeholder{color:var(--dimmer)}
+
+  /* ---------- overlay ---------- */
+  .ov{position:fixed;inset:0;z-index:20;display:none}
+  .ov.show{display:flex}
+
+  /* ---------- lobi ---------- */
+  #menu{background:rgba(9,9,11,.9);overflow:auto;padding:calc(18px + env(safe-area-inset-top)) 22px 18px;z-index:30}
+  #menu .wrap{width:min(920px,100%);margin:0 auto;display:flex;flex-direction:column;gap:18px}
+  #menu header{display:flex;align-items:baseline;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:10px}
+  .brand{font-weight:700;letter-spacing:.3em;font-size:14px}
+  .tag{color:var(--dim);font-size:12px}
+  .cols{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+  .col h3{margin:0 0 8px;font-size:10px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+  .row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:9px 10px;margin-bottom:2px;
+    border-left:2px solid var(--line);cursor:pointer}
+  .row:hover{background:#15151a}
+  .row.on{background:#18181d;border-left-color:var(--text)}
+  .row b{font-weight:500;font-size:14px}
+  .row small{color:var(--dim);font-size:11px;white-space:nowrap}
+  #menu footer{display:flex;align-items:flex-end;gap:22px;flex-wrap:wrap}
+  .field{display:flex;flex-direction:column;gap:2px}
+  .field span{font-size:10px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+  #err{margin:0;min-height:16px;font-size:12px;color:var(--danger)}
+  .hint{margin:0;font-size:11px;line-height:1.7;color:var(--dimmer)}
+  .hint b{color:var(--dim);font-weight:500}
+
+  /* ---------- HUD ---------- */
+  #hud{position:fixed;inset:0;z-index:7;pointer-events:none;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)}
+  #hud.hide{display:none}
+  #topc{position:absolute;top:calc(8px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);text-align:center}
+  #topc b{font-size:20px;font-weight:600}
+  #topc i{font-style:normal;opacity:.5;margin:0 4px}
+  #topc small{display:block;font-size:10px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;opacity:.55;margin-top:1px}
+  #stat{position:absolute;left:12px;top:calc(12px + 116px + env(safe-area-inset-top));font-size:10px;opacity:.5}
+  #sb{position:absolute;top:calc(10px + env(safe-area-inset-top));right:14px;min-width:150px;font-size:12px}
+  #sb .r{display:flex;gap:10px;padding:1px 0;opacity:.72}
+  #sb .r.me{opacity:1;font-weight:600}
+  #sb .n{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #sb .k{width:24px;text-align:right}
+  #sb .bt{font-size:9px;letter-spacing:.1em;opacity:.55;margin-left:5px}
+  #sb.full{pointer-events:none;top:50%;right:auto;left:50%;transform:translate(-50%,-50%);width:min(460px,92vw);padding:16px 20px;
+    background:rgba(10,10,12,.9);font-size:14px;border:1px solid var(--line);text-shadow:none}
+  #sb .hd{font-size:10px;letter-spacing:.16em;text-transform:uppercase;opacity:.5;margin-bottom:6px;display:flex;justify-content:space-between}
+  #feed{position:absolute;top:calc(112px + env(safe-area-inset-top));right:14px;text-align:right;font-size:12px}
+  #feed div{margin-top:3px;opacity:.78}
+  #feed div.me{opacity:1}
+  #feed em{font-style:normal;opacity:.55;margin:0 4px}
+  #hp{position:absolute;left:16px;bottom:calc(16px + env(safe-area-inset-bottom))}
+  #hpn{font-size:32px;font-weight:600;line-height:1}
+  #hpbar{width:136px;height:3px;background:rgba(255,255,255,.22);margin-top:7px}
+  #hpf{display:block;height:100%;width:100%;background:#fff}
+  #hp.low #hpf{background:var(--danger)}
+  #hp.low #hpn{color:var(--danger)}
+  #wpn{position:absolute;right:18px;bottom:calc(16px + env(safe-area-inset-bottom));text-align:right}
+  #slots{display:flex;justify-content:flex-end;margin-bottom:6px;pointer-events:auto}
+  .slot{padding:3px 8px;font-size:11px;font-weight:500;opacity:.42;border-bottom:2px solid transparent;margin-left:2px;white-space:nowrap}
+  .slot u{text-decoration:none;opacity:.6;margin-right:5px}
+  .slot.on{opacity:1;border-bottom-color:#fff}
+  #ammo b{font-size:36px;font-weight:600;line-height:1}
+  #ammo span{font-size:14px;opacity:.55;margin-left:5px}
+  #ammo.melee b{font-size:18px;font-weight:500;opacity:.8}
+  #rel{height:2px;background:rgba(255,255,255,.2);margin-top:6px;visibility:hidden}
+  #relf{display:block;height:100%;width:0;background:#fff}
+  #toast{position:absolute;top:21%;left:50%;transform:translateX(-50%);font-size:12px;font-weight:600;letter-spacing:.14em;
+    text-transform:uppercase;opacity:0;transition:opacity .25s;white-space:nowrap}
+  #toast.on{opacity:.9}
+  #flash{position:fixed;inset:0;z-index:4;pointer-events:none;opacity:0;box-shadow:inset 0 0 140px 30px rgba(255,50,50,.6)}
+
+  /* ---------- layar mati / menang / jeda ---------- */
+  #dead{background:rgba(0,0,0,.4);align-items:flex-end;justify-content:flex-start;padding:0 0 calc(44px + env(safe-area-inset-bottom)) 44px}
+  #dead .box{display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+  #dwho{font-size:24px;font-weight:600}
+  #dsub{font-size:13px;color:var(--dim);margin-top:-6px}
+  #win{background:rgba(9,9,11,.86);align-items:center;justify-content:center}
+  #win .box{width:min(420px,90vw)}
+  #wtitle{font-size:26px;font-weight:600;margin:0 0 4px}
+  #wsub{color:var(--dim);font-size:12px;margin:0 0 14px}
+  #wtab .r{display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--line);font-size:14px}
+  #wtab .r.me{font-weight:600}
+  #wtab .n{flex:1}
+  #wtab .k{width:34px;text-align:right}
+  .center{align-items:center;justify-content:center;flex-direction:column;gap:12px;text-align:center;background:rgba(9,9,11,.82)}
+  .center p{margin:0}
+  .center .big{font-size:22px;font-weight:600}
+  .center .sm{font-size:13px;color:var(--dim)}
+
+  /* ---------- kontrol sentuh ---------- */
+  #tz{position:fixed;inset:0;z-index:6;display:none}
+  .touch #tz{display:block}
+  .tb{position:fixed;z-index:8;display:none;align-items:center;justify-content:center;border:1.5px solid rgba(255,255,255,.5);
+    border-radius:50%;background:rgba(255,255,255,.05);font-size:10px;font-weight:600;letter-spacing:.1em;color:#fff;touch-action:none;
+    text-transform:uppercase}
+  .touch.playing .tb{display:flex}
+  .tb.on{background:rgba(255,255,255,.28)}
+  #bFire{right:calc(22px + env(safe-area-inset-right));bottom:calc(24px + env(safe-area-inset-bottom));width:84px;height:84px;font-size:11px}
+  #bJump{right:calc(118px + env(safe-area-inset-right));bottom:calc(24px + env(safe-area-inset-bottom));width:58px;height:58px}
+  #bRel{right:calc(24px + env(safe-area-inset-right));bottom:calc(118px + env(safe-area-inset-bottom));width:46px;height:46px}
+  #bSwap{right:calc(80px + env(safe-area-inset-right));bottom:calc(118px + env(safe-area-inset-bottom));width:46px;height:46px}
+  #bAds{right:calc(136px + env(safe-area-inset-right));bottom:calc(118px + env(safe-area-inset-bottom));width:46px;height:46px}
+  #stickB,#stickK{position:fixed;z-index:7;border-radius:50%;display:none;pointer-events:none}
+  #stickB{width:116px;height:116px;border:1.5px solid rgba(255,255,255,.35)}
+  #stickK{width:46px;height:46px;background:rgba(255,255,255,.35)}
+  .touch #hp{left:50%;transform:translateX(-50%);text-align:center}
+  .touch #hpbar{margin-left:auto;margin-right:auto}
+  .touch #wpn{right:calc(205px + env(safe-area-inset-right))}
+  .touch #feed{top:calc(112px + env(safe-area-inset-top))}
+  #rot{display:none;position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:40;font-size:11px;background:#000;padding:5px 10px;border:1px solid var(--line)}
+  @media (orientation:portrait){.touch.playing #rot{display:block}}
+
+  @media (max-width:760px){
+    .cols{grid-template-columns:1fr;gap:14px}
+  }
+  @media (max-height:460px) and (orientation:landscape){
+    #menu{padding:calc(8px + env(safe-area-inset-top)) 16px 8px}
+    #menu .wrap{gap:9px}
+    .row{padding:6px 9px}
+    .row b{font-size:13px}
+    .cols{gap:14px}
+    .hint{display:none}
+    .col h3{margin-bottom:5px}
+  }
+  @media (min-width:761px) and (max-height:460px){ .cols{grid-template-columns:repeat(3,1fr)} }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="fx"></canvas>
+<div id="flash"></div>
+
+<div id="hud" class="hide">
+  <div id="topc"><b id="kcur">0</b><i>/</i><span id="klim">15</span><small id="mode"></small></div>
+  <div id="stat"></div>
+  <div id="sb"></div>
+  <div id="feed"></div>
+  <div id="hp"><div id="hpn">100</div><div id="hpbar"><i id="hpf"></i></div></div>
+  <div id="wpn">
+    <div id="slots"></div>
+    <div id="ammo"><b id="mag">0</b><span id="res"></span></div>
+    <div id="rel"><i id="relf"></i></div>
+  </div>
+  <div id="toast"></div>
+</div>
+
+<div id="tz"></div>
+<div id="stickB"></div><div id="stickK"></div>
+<div class="tb" id="bAds">Bidik</div>
+<div class="tb" id="bSwap">Ganti</div>
+<div class="tb" id="bRel">Isi</div>
+<div class="tb" id="bJump">Loncat</div>
+<div class="tb" id="bFire">Tembak</div>
+<div id="rot">Putar HP ke mode lanskap</div>
+
+<div class="ov show" id="menu">
+  <div class="wrap">
+    <header><span class="brand">ARENA</span><span class="tag" id="menutag">Kota &middot; Deathmatch</span></header>
+    <div class="cols" id="cols"></div>
+    <footer>
+      <label class="field" id="namef"><span>Nama</span><input id="name" maxlength="12" placeholder="Pemain" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      <button class="btn primary" id="go">Masuk</button>
+    </footer>
+    <p id="err"></p>
+    <p class="hint"><b>Komputer</b> WASD jalan &middot; mouse bidik &middot; klik tembak &middot; klik kanan bidik &middot; R isi ulang &middot; 1 2 3 ganti senjata &middot; Shift lari &middot; Tab skor<br>
+    <b>HP</b> geser kiri untuk jalan &middot; geser kanan untuk bidik &middot; tombol di kanan bawah</p>
+  </div>
+</div>
+
+<div class="ov" id="pause"><div class="center ov show" style="position:absolute"><p class="big">Jeda</p><p class="sm">Klik di mana saja untuk lanjut</p></div></div>
+<div class="ov" id="dead"><div class="box"><div id="dwho"></div><div id="dsub"></div><button class="btn" id="dchange">Ganti senjata</button></div></div>
+<div class="ov" id="win"><div class="box"><h2 id="wtitle"></h2><p id="wsub"></p><div id="wtab"></div></div></div>
+<div class="ov center" id="disc"><p class="big">Koneksi terputus</p><p class="sm">Pastikan masih di WiFi yang sama dan host masih menjalankan server.</p><button class="btn primary" onclick="location.reload()">Muat ulang</button></div>
+
+<script src="map.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
