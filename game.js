@@ -9,7 +9,7 @@
   if (isTouch) document.body.classList.add('touch');
 
   var BODY = [[0.46, 0.5, 0.56], [0.55, 0.42, 0.4], [0.42, 0.52, 0.45], [0.5, 0.47, 0.38], [0.45, 0.43, 0.56], [0.55, 0.5, 0.45], [0.38, 0.5, 0.54], [0.54, 0.42, 0.5]];
-  var FOG = [0.72, 0.77, 0.83];
+  var FOG = [0.55, 0.76, 0.95];
   var EYE = 1.55, SLOT_NAMES = ['Utama', 'Sekunder', 'Jarak dekat'], DIFF = ['Mudah', 'Sedang', 'Sulit'];
 
   // ================= matematika =================
@@ -179,6 +179,19 @@
   var recoil = 0, flashT = 0, flashA = 0, hitT = -999, hitKill = false, hitHead = false, muzzleT = 0, bobT = 0;
   var W = 0, H = 0, DPR = 1, VP = null, eyeNow = [0, 0, 0], fovNow = 1.2;
   var menuMode = 'join';   // 'join' | 'change'
+  function menuOpen() { return $('menu').classList.contains('show') || $('wpanel').classList.contains('show') || $('hpanel').classList.contains('show'); }
+  var rem = 11;
+  var stats = { kills: 0, deaths: 0, wins: 0 };
+  try { var st0 = JSON.parse(localStorage.getItem('arena_stats') || 'null'); if (st0) stats = st0; } catch (e) { /* abaikan */ }
+  function saveStats() { try { localStorage.setItem('arena_stats', JSON.stringify(stats)); } catch (e) { /* abaikan */ } }
+  function drawProfile() {
+    var nm = ($('name').value || '').trim() || 'Pemain';
+    $('pnm').textContent = nm; $('pav').textContent = nm.charAt(0).toUpperCase();
+    $('pk').textContent = 'Kill ' + stats.kills; $('pd').textContent = 'Mati ' + stats.deaths; $('pw').textContent = 'Menang ' + stats.wins;
+    $('pbar').firstElementChild.style.width = ((stats.kills % 10) * 10) + '%';
+  }
+  var LOBBY = { x: 16, z: 0, yaw: 0 };
+  var lobbyChar = { buf: [], w: 0, fl: -999, col: [0.86, 0.2, 0.2] };
 
   function wdef() { return WP[S.lo[S.slot]]; }
   function slotOf(w) { return WP[w].slot; }
@@ -246,14 +259,14 @@
   function connect(name) {
     var proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
     var ws;
-    try { ws = new WebSocket(proto + location.host + '/ws'); } catch (e) { $('err').textContent = 'Tidak bisa konek ke server.'; $('go').disabled = false; return; }
+    try { ws = new WebSocket(proto + location.host + '/ws'); } catch (e) { $('err').textContent = 'Tidak bisa konek ke server.'; $('mPlay').disabled = false; return; }
     S.ws = ws;
     ws.onopen = function () {
       send({ t: 'join', name: name, lo: pick });
       pingTimer = setInterval(function () { send({ t: 'ping', c: performance.now() }); }, 2000);
     };
-    ws.onerror = function () { if (!S.playing) { $('err').textContent = 'Gagal konek. Pastikan server jalan dan WiFi sama.'; $('go').disabled = false; } };
-    ws.onclose = function () { clearInterval(pingTimer); if (S.playing) show('disc', true); else $('go').disabled = false; };
+    ws.onerror = function () { if (!S.playing) { $('err').textContent = 'Gagal konek. Pastikan server jalan dan WiFi sama.'; $('mPlay').disabled = false; } };
+    ws.onclose = function () { clearInterval(pingTimer); if (S.playing) show('disc', true); else $('mPlay').disabled = false; };
     ws.onmessage = function (ev) { var m; try { m = JSON.parse(ev.data); } catch (e) { return; } onMsg(m); };
   }
 
@@ -275,7 +288,7 @@
         $('klim').textContent = S.killLimit;
         $('mode').textContent = S.bots > 0 ? 'Lawan bot · ' + DIFF[Math.max(0, Math.min(2, S.diff))] : 'Deathmatch';
         break;
-      case 'full': $('err').textContent = 'Server penuh (maksimal 12 pemain).'; $('go').disabled = false; break;
+      case 'full': $('err').textContent = 'Server penuh (maksimal 12 pemain).'; $('mPlay').disabled = false; break;
       case 'pong': S.ping = Math.round(now - m.c); break;
       case 'roster':
         roster = {};
@@ -318,7 +331,11 @@
           show('dead', true);
         }
         break;
-      case 'kill': addFeed(m); break;
+      case 'kill':
+        addFeed(m);
+        if (m.k === S.id) { stats.kills++; saveStats(); }
+        if (m.v === S.id) { stats.deaths++; saveStats(); }
+        break;
       case 'win': onWin(m); break;
       case 'reset':
         S.matchOver = false; show('win', false); show('dead', false); $('feed').innerHTML = '';
@@ -382,7 +399,7 @@
   }
   function buildSlots() {
     var h = '';
-    for (var i = 0; i < 3; i++) h += '<div class="slot' + (i === S.slot ? ' on' : '') + '" data-s="' + i + '"><u>' + (i + 1) + '</u>' + esc(WP[S.lo[i]].name) + '</div>';
+    for (var i = 0; i < 3; i++) h += '<div class="slot' + (i === S.slot ? ' on' : '') + '" data-s="' + i + '"><u>' + (i + 1) + '</u><b>' + esc(WP[S.lo[i]].name) + '</b><i></i></div>';
     $('slots').innerHTML = h;
   }
   $('slots').addEventListener('pointerdown', function (e) {
@@ -394,12 +411,13 @@
     var hp = Math.max(0, S.hp);
     $('hpn').textContent = hp; $('hpf').style.width = hp + '%';
     $('hp').className = hp <= 30 ? 'low' : '';
-    var w = wdef(), melee = w.slot === 2;
-    $('ammo').className = melee ? 'melee' : '';
-    $('mag').textContent = melee ? w.name : S.mag[S.slot];
-    $('res').textContent = melee ? '' : '/ ' + S.res[S.slot];
     var sl = $('slots').children;
-    for (var i = 0; i < sl.length; i++) sl[i].className = 'slot' + (i === S.slot ? ' on' : '');
+    for (var i = 0; i < sl.length; i++) {
+      sl[i].className = 'slot' + (i === S.slot ? ' on' : '');
+      var wi = WP[S.lo[i]], ie = sl[i].lastElementChild;
+      if (wi.slot === 2) ie.innerHTML = '&infin;';
+      else ie.innerHTML = S.mag[i] + '<s>/' + S.res[i] + '</s>';
+    }
     var rel = $('rel');
     if (S.reloading) { rel.style.visibility = 'visible'; $('relf').style.width = Math.min(100, (now - S.reloadStart) / (S.reloadEnd - S.reloadStart) * 100) + '%'; }
     else rel.style.visibility = 'hidden';
@@ -416,6 +434,7 @@
 
   function onWin(m) {
     S.matchOver = true;
+    if (m.id === S.id) { stats.wins++; saveStats(); }
     $('wtitle').textContent = m.id === S.id ? 'Kamu menang' : esc(m.name) + ' menang';
     $('wsub').textContent = 'Ronde baru dimulai sebentar lagi';
     var h = '';
@@ -498,6 +517,7 @@
 
   // ================= render =================
   function resize() {
+    rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 11;
     DPR = Math.min(window.devicePixelRatio || 1, isTouch ? 1.5 : 2);
     W = window.innerWidth; H = window.innerHeight;
     glc.width = fxc.width = Math.round(W * DPR); glc.height = fxc.height = Math.round(H * DPR);
@@ -506,7 +526,7 @@
   window.addEventListener('resize', resize);
 
   function drawPlayer(arr, id, p, r, now) {
-    var col = BODY[((roster[id] && roster[id].color) || 0) % 8];
+    var col = r.col || BODY[((roster[id] && roster[id].color) || 0) % 8];
     var sw = p.mv ? Math.sin(now * 0.012) * 0.24 : 0;
     var pants = [0.17, 0.18, 0.21];
     pushBox(arr, p.x, p.y, p.z, p.yaw, -0.13, 0.4, sw, 0.1, 0.4, 0.12, pants, false);
@@ -530,9 +550,10 @@
     var ex, ey, ez, tx, ty, tz;
     var cur = S.playing ? wdef() : null;
     if (!S.playing) {
-      var a = now * 0.00006;
-      ex = Math.sin(a) * 66; ez = Math.cos(a) * 66; ey = 34; tx = 0; ty = 9; tz = 0;
-      fov = 0.95;
+      var ly = LOBBY.yaw, fwx = -Math.sin(ly), fwz = -Math.cos(ly), sdx = Math.cos(ly), sdz = -Math.sin(ly);
+      ex = LOBBY.x + fwx * 3.5 + sdx * 0.1; ey = 1.2; ez = LOBBY.z + fwz * 3.5 + sdz * 0.1;
+      tx = LOBBY.x; ty = 1.05; tz = LOBBY.z;
+      fov = aspect < 1.1 ? 1.2 : 0.85;
     } else {
       var eyeY = S.y + (S.alive ? EYE : 0.45), d = dirOf(S.yaw, S.pitch);
       ex = S.x; ey = eyeY; ez = S.z; tx = ex + d[0]; ty = ey + d[1]; tz = ez + d[2];
@@ -550,7 +571,13 @@
     drawBuf(floorBuf, floorCount);
     gl.enable(gl.DEPTH_TEST);
     drawBuf(staticBuf, staticCount);
-    if (!S.playing) return;
+    if (!S.playing) {
+      var la = [], lp = { x: LOBBY.x, y: 0, z: LOBBY.z, yaw: LOBBY.yaw + Math.sin(now * 0.0009) * 0.35, mv: false };
+      lobbyChar.w = pick[0];
+      drawPlayer(la, 'lobby', lp, lobbyChar, now);
+      drawDyn(la);
+      return;
+    }
 
     var arr = [], id, i;
     for (id in remotes) {
@@ -606,18 +633,18 @@
     var n = Math.round(MAP.half * 2 * MMK);
     mmLayer = document.createElement('canvas'); mmLayer.width = mmLayer.height = n;
     var c = mmLayer.getContext('2d');
-    c.fillStyle = '#18181c'; c.fillRect(0, 0, n, n);
-    c.fillStyle = '#34343b';
+    c.fillStyle = '#35604a'; c.fillRect(0, 0, n, n);
+    c.fillStyle = '#9fb7c9';
     MAP.boxes.forEach(function (b) {
       if (b[4] - b[1] < 1.2 || b[1] > 1) return;
       c.fillRect((b[0] + MAP.half) * MMK, (b[2] + MAP.half) * MMK, (b[3] - b[0]) * MMK, (b[5] - b[2]) * MMK);
     });
   }
   function drawMinimap(now) {
-    var cx = 70, cy = 70, Rr = 54, range = 40, sc = Rr / range;
+    var Rr = rem * 4.6, cx = rem * 5.3, cy = rem * 5.3, range = 40, sc = Rr / range;
     fx.save();
     fx.beginPath(); fx.arc(cx, cy, Rr, 0, Math.PI * 2); fx.clip();
-    fx.fillStyle = 'rgba(12,12,14,.72)'; fx.fillRect(cx - Rr, cy - Rr, Rr * 2, Rr * 2);
+    fx.fillStyle = 'rgba(24,52,40,.82)'; fx.fillRect(cx - Rr, cy - Rr, Rr * 2, Rr * 2);
     var cs = Math.cos(S.yaw), sn = Math.sin(S.yaw);
     fx.save();
     fx.translate(cx, cy);
@@ -637,15 +664,17 @@
       fx.fillStyle = '#ff5b5b'; fx.beginPath(); fx.arc(cx + sx, cy + sy, 2.6, 0, Math.PI * 2); fx.fill();
     }
     fx.restore();
-    fx.strokeStyle = 'rgba(255,255,255,.28)'; fx.lineWidth = 1;
+    fx.strokeStyle = '#151515'; fx.lineWidth = 5;
     fx.beginPath(); fx.arc(cx, cy, Rr, 0, Math.PI * 2); fx.stroke();
+    fx.strokeStyle = '#ffd23f'; fx.lineWidth = 2;
+    fx.beginPath(); fx.arc(cx, cy, Rr - 1, 0, Math.PI * 2); fx.stroke();
     fx.fillStyle = '#fff'; fx.beginPath(); fx.moveTo(cx, cy - 5); fx.lineTo(cx + 3.6, cy + 4); fx.lineTo(cx, cy + 2); fx.lineTo(cx - 3.6, cy + 4); fx.closePath(); fx.fill();
   }
 
   // ================= overlay 2D (crosshair, nama, arah serangan, scope) =================
   function drawFx(now) {
     fx.clearRect(0, 0, W, H);
-    if (!S.playing || $('menu').classList.contains('show')) return;
+    if (!S.playing || menuOpen()) return;
     var cx = W / 2, cy = H / 2, i;
     // nama di atas kepala
     fx.textAlign = 'center'; fx.font = '600 11px system-ui,sans-serif';
@@ -753,8 +782,7 @@
   function lockPointer() { try { var p = glc.requestPointerLock && glc.requestPointerLock(); if (p && p.catch) p.catch(function () {}); } catch (e) { /* abaikan */ } }
   document.addEventListener('pointerlockchange', function () {
     if (isTouch || !S.playing) return;
-    var menuOpen = $('menu').classList.contains('show');
-    S.paused = !locked() && S.alive && !menuOpen;
+    S.paused = !locked() && S.alive && !menuOpen();
     show('pause', S.paused && !$('disc').classList.contains('show'));
     if (!locked()) { fireHeld = false; keys = {}; }
   });
@@ -765,7 +793,7 @@
     S.pitch = Math.max(-1.5, Math.min(1.5, S.pitch - e.movementY * sens));
   });
   document.addEventListener('mousedown', function (e) {
-    if (isTouch || !S.playing || $('menu').classList.contains('show')) return;
+    if (isTouch || !S.playing || menuOpen()) return;
     audio();
     if (!locked()) { lockPointer(); return; }
     if (e.button === 0) fireHeld = true;
@@ -778,11 +806,10 @@
   // ================= input sentuh =================
   var tz = $('tz'), lookT = null, stickT = null, stickO = null, STICK_MAX = 50;
   function setStickUI(on, x, y, kx, ky) {
-    $('stickB').style.display = $('stickK').style.display = on ? 'block' : 'none';
-    if (on) {
-      $('stickB').style.left = (x - 58) + 'px'; $('stickB').style.top = (y - 58) + 'px';
-      $('stickK').style.left = (kx - 23) + 'px'; $('stickK').style.top = (ky - 23) + 'px';
-    }
+    if (!on) { x = kx = rem * 5.8; y = ky = H - rem * 5.6; }
+    var bs = rem * 3.7, ks = rem * 1.8;
+    $('stickB').style.left = (x - bs) + 'px'; $('stickB').style.top = (y - bs) + 'px';
+    $('stickK').style.left = (kx - ks) + 'px'; $('stickK').style.top = (ky - ks) + 'px';
   }
   tz.addEventListener('touchstart', function (e) {
     e.preventDefault(); audio();
@@ -859,24 +886,33 @@
   });
   function openMenu(mode) {
     menuMode = mode;
-    $('namef').style.display = mode === 'join' ? '' : 'none';
-    $('go').textContent = mode === 'join' ? 'Masuk' : 'Simpan';
-    $('menutag').textContent = mode === 'join' ? 'Kota · pilih 3 senjata' : 'Berlaku saat hidup lagi';
-    buildMenu(); show('menu', true);
-    if (mode === 'change') { try { document.exitPointerLock(); } catch (e) { /* abaikan */ } }
+    if (mode === 'join') { show('menu', true); show('wpanel', false); drawProfile(); }
+    else { buildMenu(); show('wpanel', true); try { document.exitPointerLock(); } catch (e) { /* abaikan */ } }
   }
+  function openWeapons() { buildMenu(); show('wpanel', true); }
   $('dchange').addEventListener('click', function () { openMenu('change'); });
-
-  function start() {
+  $('tw').addEventListener('click', openWeapons);
+  $('th').addEventListener('click', function () { show('hpanel', true); });
+  $('mHelp').addEventListener('click', function () { show('hpanel', true); });
+  $('hOk').addEventListener('click', function () { show('hpanel', false); });
+  $('wOk').addEventListener('click', function () {
+    show('wpanel', false);
     if (menuMode === 'change') {
       send({ t: 'loadout', lo: pick });
-      show('menu', false);
       if (!isTouch && S.alive) lockPointer();
-      return;
     }
+  });
+  if (window.Android && window.Android.back) {
+    $('mBack').hidden = false;
+    $('mBack').addEventListener('click', function () { window.Android.back(); });
+  }
+  $('mSrv').textContent = (location.host ? 'Server ' + location.host : '');
+  $('name').addEventListener('input', drawProfile);
+
+  function start() {
     var name = $('name').value.trim();
     try { localStorage.setItem('arena_name', name); } catch (e) { /* abaikan */ }
-    $('err').textContent = ''; $('go').disabled = true;
+    $('err').textContent = ''; $('mPlay').disabled = true;
     audio();
     if (!isTouch) lockPointer();
     else {
@@ -885,16 +921,17 @@
     }
     connect(name);
   }
-  $('go').addEventListener('click', start);
+  $('mPlay').addEventListener('click', start);
   $('name').addEventListener('keydown', function (e) { if (e.key === 'Enter') start(); });
   try { $('name').value = localStorage.getItem('arena_name') || ''; } catch (e) { /* abaikan */ }
 
-  if (!gl) { $('err').textContent = 'Browser ini tidak mendukung WebGL (grafik 3D).'; $('go').disabled = true; return; }
-  try { setupGL(); } catch (err) { $('err').textContent = 'Gagal menyiapkan grafik 3D: ' + err.message; $('go').disabled = true; return; }
+  if (!gl) { $('err').textContent = 'Browser ini tidak mendukung WebGL (grafik 3D).'; $('mPlay').disabled = true; return; }
+  try { setupGL(); } catch (err) { $('err').textContent = 'Gagal menyiapkan grafik 3D: ' + err.message; $('mPlay').disabled = true; return; }
   buildMinimap();
   buildSlots();
-  openMenu('join');
   resize();
+  openMenu('join');
+  setStickUI(false);
   requestAnimationFrame(frame);
-  window.__arena = { S: S, remotes: remotes };
+  window.__arena = { S: S, remotes: remotes, LOBBY: LOBBY };
 })();
