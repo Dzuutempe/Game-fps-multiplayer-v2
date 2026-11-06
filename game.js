@@ -1,4 +1,4 @@
-// Arena v2 - klien: renderer WebGL sendiri, lobi dengan 3 slot senjata, HUD minimalis, kontrol PC + sentuh.
+// Arena v3 - klien: renderer WebGL sendiri, lobi dengan 3 slot senjata, HUD minimalis, kontrol PC + sentuh.
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
@@ -35,10 +35,11 @@
   }
   function lerp(a, b, t) { return a + (b - a) * t; }
 
-  // ================= geometri (10 float / vertex: pos, normal, warna, material) =================
-  function V(arr, x, y, z, nx, ny, nz, c, m) { arr.push(x, y, z, nx, ny, nz, c[0], c[1], c[2], m); }
-  function pushBox(arr, bx, by, bz, yaw, cx, cy, cz, hx, hy, hz, col, flat, mat) {
-    var cs = Math.cos(yaw), sn = Math.sin(yaw), m = mat || 0;
+  // ================= geometri (12 float / vertex: pos3 normal3 uv2 warna3 material1) =================
+  var STRIDE = 48;
+  function V(arr, x, y, z, nx, ny, nz, c, m) { arr.push(x, y, z, nx, ny, nz, 0, 0, c[0], c[1], c[2], m); }
+  function pushBox(arr, bx, by, bz, yaw, cx, cy, cz, hx, hy, hz, col, flat) {
+    var cs = Math.cos(yaw), sn = Math.sin(yaw);
     var ax = [[cs, 0, -sn], [0, 1, 0], [sn, 0, cs]];
     var h = [hx, hy, hz];
     var wx = bx + cx * cs + cz * sn, wy = by + cy, wz = bz - cx * sn + cz * cs;
@@ -58,14 +59,10 @@
         var order = [0, 1, 2, 0, 2, 3];
         for (var k = 0; k < 6; k++) {
           var p = P[order[k]];
-          V(arr, p[0], p[1], p[2], flat ? 0 : nx, flat ? 0 : ny, flat ? 0 : nz, col, m);
+          V(arr, p[0], p[1], p[2], flat ? 0 : nx, flat ? 0 : ny, flat ? 0 : nz, col, 0);
         }
       }
     }
-  }
-  function pushRect(arr, x0, z0, x1, z1, y, col) {
-    V(arr, x0, y, z0, 0, 1, 0, col, 0); V(arr, x0, y, z1, 0, 1, 0, col, 0); V(arr, x1, y, z1, 0, 1, 0, col, 0);
-    V(arr, x0, y, z0, 0, 1, 0, col, 0); V(arr, x1, y, z1, 0, 1, 0, col, 0); V(arr, x1, y, z0, 0, 1, 0, col, 0);
   }
   function pushBeam(arr, a, b, cam, w, col) {
     var dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
@@ -75,94 +72,243 @@
     var P = [[a[0] - px, a[1] - py, a[2] - pz], [a[0] + px, a[1] + py, a[2] + pz], [b[0] + px, b[1] + py, b[2] + pz], [b[0] - px, b[1] - py, b[2] - pz]];
     [0, 1, 2, 0, 2, 3].forEach(function (i) { V(arr, P[i][0], P[i][1], P[i][2], 0, 0, 0, col, 0); });
   }
+  // matriks 4x4 kolom-utama
+  var IDENT = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+  function mT(x, y, z) { return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1]; }
+  function mRy(a) { var c = Math.cos(a), s = Math.sin(a); return [c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1]; }
+  function mRx(a) { var c = Math.cos(a), s = Math.sin(a); return [1, 0, 0, 0, 0, c, s, 0, 0, -s, c, 0, 0, 0, 0, 1]; }
+  function mRz(a) { var c = Math.cos(a), s = Math.sin(a); return [c, s, 0, 0, -s, c, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]; }
+  function xf(m, p) { return [m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13], m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14]]; }
 
-  // ================= model senjata (kotak; depan = -z) =================
-  var D = [0.2, 0.21, 0.24], K = [0.09, 0.09, 0.11], Wd = [0.4, 0.27, 0.17], Mt = [0.66, 0.68, 0.72], Bl = [0.78, 0.8, 0.84];
-  var MODELS = {
-    ar: [[0, 0, 0, .03, .04, .2, D], [0, .012, -.3, .012, .012, .12, K], [0, -.08, .03, .02, .05, .025, K], [0, -.01, .25, .025, .04, .07, Wd], [0, .052, -.02, .008, .012, .03, K]],
-    smg: [[0, 0, 0, .03, .04, .15, D], [0, .01, -.22, .011, .011, .08, K], [0, -.09, .02, .016, .06, .02, K], [0, .05, 0, .008, .01, .03, K]],
-    shotgun: [[0, 0, 0, .03, .035, .22, D], [0, .018, -.32, .014, .014, .16, K], [0, -.02, -.3, .018, .014, .14, K], [0, -.03, -.12, .03, .02, .06, Wd], [0, -.01, .27, .028, .045, .08, Wd]],
-    sniper: [[0, 0, 0, .026, .036, .26, D], [0, .01, -.46, .01, .01, .2, K], [0, .062, -.03, .018, .018, .1, K], [0, .062, -.03, .026, .026, .015, K], [0, -.01, .3, .026, .045, .08, Wd], [0, -.07, .0, .015, .035, .02, K]],
-    lmg: [[0, 0, 0, .04, .045, .22, D], [0, .014, -.34, .013, .013, .13, K], [0, -.1, .02, .06, .055, .05, K], [0, -.02, .26, .03, .04, .07, Wd], [0, -.04, -.3, .006, .05, .006, K]],
-    pistol: [[0, 0, -.02, .016, .026, .09, D], [0, .004, -.12, .01, .01, .04, K], [0, -.065, .06, .015, .05, .02, Wd]],
-    revolver: [[0, 0, 0, .016, .03, .08, D], [0, .008, -.16, .01, .01, .09, K], [0, .002, -.04, .026, .026, .035, Mt], [0, -.07, .08, .016, .05, .022, Wd]],
-    mpistol: [[0, 0, -.02, .02, .03, .11, D], [0, .008, -.16, .009, .009, .05, K], [0, -.08, .0, .012, .06, .02, K], [0, -.06, .08, .015, .045, .02, Wd]],
-    knife: [[0, 0, -.14, .006, .026, .15, Bl], [0, -.002, .02, .015, .016, .06, K]],
-    bat: [[0, 0, -.3, .028, .028, .34, Wd], [0, 0, -.62, .036, .036, .1, Wd], [0, 0, .06, .02, .02, .06, K]]
-  };
-  // posisi moncong (z paling depan) untuk jejak peluru
-  var MUZZLE = {};
-  Object.keys(MODELS).forEach(function (k) {
-    var z = 0, y = 0;
-    MODELS[k].forEach(function (b) { if (b[2] - b[5] < z) { z = b[2] - b[5]; y = b[1]; } });
-    MUZZLE[k] = [0, y, z];
-  });
+  // ================= aset 3D (dari models3d.js dan mapdata.js) =================
+  var A3D = window.A3D, A3DMAP = window.A3DMAP;
+  function b64(s, T) {
+    var bin = atob(s), n = bin.length, u = new Uint8Array(n);
+    for (var i = 0; i < n; i++) u[i] = bin.charCodeAt(i);
+    return new T(u.buffer);
+  }
+  function decodePart(p) {
+    var n = p.n, P = b64(p.P, Int16Array), N = b64(p.N, Int8Array), I = b64(p.I, Uint16Array);
+    var U = p.U ? b64(p.U, Uint16Array) : null, C = p.C ? b64(p.C, Uint8Array) : null;
+    var pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), uv = new Float32Array(n * 2), i;
+    for (i = 0; i < n; i++) {
+      pos[i * 3] = p.o[0] + P[i * 3] * p.s; pos[i * 3 + 1] = p.o[1] + P[i * 3 + 1] * p.s; pos[i * 3 + 2] = p.o[2] + P[i * 3 + 2] * p.s;
+      nor[i * 3] = N[i * 3] / 127; nor[i * 3 + 1] = N[i * 3 + 1] / 127; nor[i * 3 + 2] = N[i * 3 + 2] / 127;
+      if (U) { uv[i * 2] = U[i * 2] / 65535; uv[i * 2 + 1] = U[i * 2 + 1] / 65535; }
+    }
+    return { n: n, pos: pos, nor: nor, uv: uv, I: I, C: C, tex: p.tex || null, color: p.color || null, BI: p.BI ? b64(p.BI, Uint8Array) : null, BW: p.BW ? b64(p.BW, Uint8Array) : null };
+  }
+  function ispot(v) { return (v & (v - 1)) === 0; }
+  var texCache = {}, whiteTex = null;
+  function getTex(name, defs) {
+    if (!name) return whiteTex;
+    if (texCache[name]) return texCache[name];
+    var def = defs[name]; if (!def) return whiteTex;
+    var t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([170, 170, 170, 255]));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    var img = new Image();
+    img.onload = function () {
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+      if (def.nearest) { gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST); }
+      else if (ispot(img.width) && ispot(img.height)) { gl.generateMipmap(gl.TEXTURE_2D); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); }
+      else { gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); }
+    };
+    img.src = def.src;
+    texCache[name] = t;
+    return t;
+  }
+  // mesh statis -> {vbo, ibo, n, tex}
+  function uploadPart(d, defs) {
+    var n = d.n, f = new Float32Array(n * 12), i, textured = !!d.tex;
+    for (i = 0; i < n; i++) {
+      var o = i * 12;
+      f[o] = d.pos[i * 3]; f[o + 1] = d.pos[i * 3 + 1]; f[o + 2] = d.pos[i * 3 + 2];
+      f[o + 3] = d.nor[i * 3]; f[o + 4] = d.nor[i * 3 + 1]; f[o + 5] = d.nor[i * 3 + 2];
+      f[o + 6] = d.uv[i * 2]; f[o + 7] = d.uv[i * 2 + 1];
+      if (d.C) { f[o + 8] = d.C[i * 3] / 255; f[o + 9] = d.C[i * 3 + 1] / 255; f[o + 10] = d.C[i * 3 + 2] / 255; }
+      else if (d.color) { f[o + 8] = d.color[0]; f[o + 9] = d.color[1]; f[o + 10] = d.color[2]; }
+      else { f[o + 8] = 1; f[o + 9] = 1; f[o + 10] = 1; }
+      f[o + 11] = textured ? 1 : 0;
+    }
+    var vbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, f, gl.STATIC_DRAW);
+    var ibo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, d.I, gl.STATIC_DRAW);
+    return { vbo: vbo, ibo: ibo, n: d.I.length, tex: textured ? getTex(d.tex, defs) : null };
+  }
+  var WM = {};        // key -> {parts, muzzle, top, size}
+  var mapParts = [];  // potongan peta
+  var CH = null;      // karakter berkerangka
+  var NBONE = 0, BONE = {};
 
   // ================= WebGL =================
-  var prog, loc = {}, staticBuf, staticCount = 0, floorBuf, floorCount = 0, dynBuf;
+  var prog, loc = {}, groundBuf, groundCount = 0, dynBuf, chBuf, chIbo;
   function setupGL() {
     function sh(type, src) {
       var s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
       if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
       return s;
     }
-    var vs = 'attribute vec3 aPos;attribute vec3 aNor;attribute vec3 aCol;attribute float aMat;uniform mat4 uMVP;uniform vec3 uLight;' +
-      'varying vec3 vCol;varying float vD;varying vec3 vPos;varying vec3 vNor;varying float vMat;varying float vSh;' +
-      'void main(){gl_Position=uMVP*vec4(aPos,1.0);vD=gl_Position.w;vPos=aPos;vNor=aNor;vMat=aMat;' +
-      'float fl=length(aNor)>0.5?(0.5+0.5*max(dot(aNor,uLight),0.0)):1.0;vSh=fl;vCol=aCol*fl;}';
+    var vs = 'attribute vec3 aPos;attribute vec3 aNor;attribute vec2 aUV;attribute vec3 aCol;attribute float aMat;uniform mat4 uVP;uniform mat4 uModel;uniform vec3 uLight;' +
+      'varying vec3 vCol;varying vec2 vUV;varying float vD;varying float vMat;varying float vSh;' +
+      'void main(){gl_Position=uVP*(uModel*vec4(aPos,1.0));vD=gl_Position.w;vec3 n=(uModel*vec4(aNor,0.0)).xyz;' +
+      'float l=length(n);float fl=l>0.5?(0.55+0.45*max(dot(n/l,uLight),0.0)):1.0;vSh=fl;vCol=aCol;vUV=aUV;vMat=aMat;}';
     var fs = '#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\n' +
-      'varying vec3 vCol;varying float vD;varying vec3 vPos;varying vec3 vNor;varying float vMat;varying float vSh;uniform vec3 uFog;' +
-      'void main(){vec3 c=vCol;' +
-      'if(vMat>0.5&&abs(vNor.y)<0.5&&vPos.y>3.2){' +
-      'float u=vPos.x*abs(vNor.z)+vPos.z*abs(vNor.x);vec2 g=vec2(u/2.5,vPos.y/3.3);vec2 f=fract(g);vec2 id=floor(g);' +
-      'float w=step(0.2,f.x)*step(f.x,0.8)*step(0.26,f.y)*step(f.y,0.78);' +
-      'float h=fract(sin(dot(id,vec2(12.9898,78.233)))*43758.5453);' +
-      'vec3 gl=mix(vec3(0.17,0.2,0.26),vec3(0.95,0.82,0.52),step(0.86,h));c=mix(c,gl*(0.55+0.45*vSh),w);}' +
-      'float fg=clamp((vD-35.0)/110.0,0.0,1.0);gl_FragColor=vec4(mix(c,uFog,fg),1.0);}';
+      'varying vec3 vCol;varying vec2 vUV;varying float vD;varying float vMat;varying float vSh;uniform vec3 uFog;uniform sampler2D uTex;' +
+      'void main(){vec3 c=vCol;if(vMat>0.5){c=texture2D(uTex,vUV).rgb*vCol;}c*=vSh;' +
+      'float fg=clamp((vD-60.0)/120.0,0.0,1.0);gl_FragColor=vec4(mix(c,uFog,fg),1.0);}';
     prog = gl.createProgram();
     gl.attachShader(prog, sh(gl.VERTEX_SHADER, vs));
     gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, fs));
     gl.linkProgram(prog);
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
     gl.useProgram(prog);
-    loc.pos = gl.getAttribLocation(prog, 'aPos'); loc.nor = gl.getAttribLocation(prog, 'aNor');
-    loc.col = gl.getAttribLocation(prog, 'aCol'); loc.mat = gl.getAttribLocation(prog, 'aMat');
-    loc.mvp = gl.getUniformLocation(prog, 'uMVP'); loc.light = gl.getUniformLocation(prog, 'uLight'); loc.fog = gl.getUniformLocation(prog, 'uFog');
-    gl.enableVertexAttribArray(loc.pos); gl.enableVertexAttribArray(loc.nor); gl.enableVertexAttribArray(loc.col); gl.enableVertexAttribArray(loc.mat);
-    gl.uniform3f(loc.fog, FOG[0], FOG[1], FOG[2]);
+    ['pos:aPos', 'nor:aNor', 'uv:aUV', 'col:aCol', 'mat:aMat'].forEach(function (s) { var a = s.split(':'); loc[a[0]] = gl.getAttribLocation(prog, a[1]); gl.enableVertexAttribArray(loc[a[0]]); });
+    loc.vp = gl.getUniformLocation(prog, 'uVP'); loc.model = gl.getUniformLocation(prog, 'uModel'); loc.light = gl.getUniformLocation(prog, 'uLight');
+    loc.fog = gl.getUniformLocation(prog, 'uFog'); loc.tex = gl.getUniformLocation(prog, 'uTex');
+    gl.uniform3f(loc.fog, FOG[0], FOG[1], FOG[2]); gl.uniform1i(loc.tex, 0);
+    gl.enable(gl.DEPTH_TEST);
 
-    // lantai/jalan: urutan gambar = urutan lapisan (tanpa depth test)
-    var fa = [];
-    pushRect(fa, -260, -260, 260, 260, 0, [0.5, 0.52, 0.5]);
-    MAP.floors.forEach(function (f) { pushRect(fa, f[0], f[1], f[2], f[3], 0, MAP.colors[f[4]]); });
-    floorCount = fa.length / 10;
-    floorBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, floorBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(fa), gl.STATIC_DRAW);
+    whiteTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, whiteTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255]));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 
-    var arr = [];
-    function addBox(b, def) {
-      var col = b[6] === null || b[6] === undefined ? def : MAP.colors[b[6]];
-      pushBox(arr, 0, 0, 0, 0, (b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2, (b[3] - b[0]) / 2, (b[4] - b[1]) / 2, (b[5] - b[2]) / 2, col, false, b[7] ? 1 : 0);
-    }
-    MAP.boxes.forEach(function (b) { addBox(b, [0.6, 0.6, 0.6]); });
-    (MAP.decor || []).forEach(function (b) { addBox(b, [0.55, 0.58, 0.62]); });
-    staticCount = arr.length / 10;
-    staticBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, staticBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arr), gl.STATIC_DRAW);
-    dynBuf = gl.createBuffer();
+    // tanah dasar (hijau, di bawah mesh peta)
+    var ga = [], g = [0.36, 0.6, 0.28];
+    var B = MAP.bounds, ex = 300;
+    V(ga, -ex, -0.03, -ex, 0, 1, 0, g, 0); V(ga, -ex, -0.03, ex, 0, 1, 0, g, 0); V(ga, ex, -0.03, ex, 0, 1, 0, g, 0);
+    V(ga, -ex, -0.03, -ex, 0, 1, 0, g, 0); V(ga, ex, -0.03, ex, 0, 1, 0, g, 0); V(ga, ex, -0.03, -ex, 0, 1, 0, g, 0);
+    groundCount = ga.length / 12;
+    groundBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, groundBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(ga), gl.STATIC_DRAW);
+    dynBuf = gl.createBuffer(); chBuf = gl.createBuffer();
+
+    // senjata
+    Object.keys(A3D.models).forEach(function (k) {
+      var m = A3D.models[k];
+      WM[k] = { parts: m.parts.map(function (p) { return uploadPart(decodePart(p), A3D.tex); }), muzzle: m.muzzle, top: m.top, size: m.size };
+    });
+    // peta
+    A3DMAP.chunks.forEach(function (c) { var d = decodePart(c); mapParts.push(uploadPart(d, A3DMAP.tex)); });
+    setupChar();
   }
-  function drawBuf(buf, count) {
-    if (!count) return;
-    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-    gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, 40, 0);
-    gl.vertexAttribPointer(loc.nor, 3, gl.FLOAT, false, 40, 12);
-    gl.vertexAttribPointer(loc.col, 3, gl.FLOAT, false, 40, 24);
-    gl.vertexAttribPointer(loc.mat, 1, gl.FLOAT, false, 40, 36);
-    gl.drawArrays(gl.TRIANGLES, 0, count);
+  function bindVB(vbo) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, STRIDE, 0);
+    gl.vertexAttribPointer(loc.nor, 3, gl.FLOAT, false, STRIDE, 12);
+    gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, STRIDE, 24);
+    gl.vertexAttribPointer(loc.col, 3, gl.FLOAT, false, STRIDE, 32);
+    gl.vertexAttribPointer(loc.mat, 1, gl.FLOAT, false, STRIDE, 44);
+  }
+  var mScratch = new Float32Array(16);
+  function setModel(m) { mScratch.set(m); gl.uniformMatrix4fv(loc.model, false, mScratch); }
+  function drawIdx(g) {
+    bindVB(g.vbo); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.ibo);
+    gl.bindTexture(gl.TEXTURE_2D, g.tex || whiteTex);
+    gl.drawElements(gl.TRIANGLES, g.n, gl.UNSIGNED_SHORT, 0);
   }
   function drawDyn(arr) {
     if (!arr.length) return;
     gl.bindBuffer(gl.ARRAY_BUFFER, dynBuf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arr), gl.DYNAMIC_DRAW);
-    drawBuf(dynBuf, arr.length / 10);
+    bindVB(dynBuf);
+    gl.bindTexture(gl.TEXTURE_2D, whiteTex);
+    gl.drawArrays(gl.TRIANGLES, 0, arr.length / 12);
+  }
+  function drawModel(key, mat) {
+    var m = WM[key]; if (!m) return;
+    setModel(mat);
+    for (var i = 0; i < m.parts.length; i++) drawIdx(m.parts[i]);
+  }
+
+  // ================= karakter berkerangka (skinning CPU) =================
+  var FACE = [];
+  function setupChar() {
+    var c = A3D.character, d = decodePart(c.part), n = d.n, i;
+    NBONE = c.bones.length;
+    c.bones.forEach(function (b, k) { BONE[b.n] = k; });
+    // wajah sederhana pada tulang kepala (koordinat ruang-bind, menghadap -z)
+    var fz = -0.1, quads = [
+      [-0.08, 1.545, 0.08, 1.735, fz + 0.004, [0.95, 0.76, 0.6]],
+      [-0.062, 1.655, -0.022, 1.7, fz - 0.002, [1, 1, 1]], [0.022, 1.655, 0.062, 1.7, fz - 0.002, [1, 1, 1]],
+      [-0.05, 1.66, -0.03, 1.69, fz - 0.004, [0.1, 0.1, 0.14]], [0.03, 1.66, 0.05, 1.69, fz - 0.004, [0.1, 0.1, 0.14]],
+      [-0.032, 1.585, 0.032, 1.6, fz - 0.002, [0.45, 0.12, 0.12]],
+      [-0.07, 1.708, -0.016, 1.718, fz - 0.003, [0.25, 0.15, 0.08]], [0.016, 1.708, 0.07, 1.718, fz - 0.003, [0.25, 0.15, 0.08]]
+    ];
+    var nf = quads.length * 4, ibase = n, idx = Array.prototype.slice.call(d.I);
+    FACE = [];
+    quads.forEach(function (q, k) {
+      var x0 = q[0], y0 = q[1], x1 = q[2], y1 = q[3], z = q[4], col = q[5];
+      [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].forEach(function (p) { FACE.push(p[0], p[1], z, col); });
+      var b = ibase + k * 4; idx.push(b, b + 2, b + 1, b, b + 3, b + 2);
+    });
+    var out = new Float32Array((n + nf) * 12);
+    for (i = 0; i < n; i++) { out[i * 12 + 6] = d.uv[i * 2]; out[i * 12 + 7] = d.uv[i * 2 + 1]; out[i * 12 + 11] = 1; }
+    for (i = 0; i < nf; i++) out[(n + i) * 12 + 11] = 0;
+    CH = { n: n, nf: nf, pos: d.pos, nor: d.nor, BI: d.BI, BW: d.BW, out: out, bones: c.bones, M: new Float32Array(NBONE * 16), rot: [], head: BONE.Head };
+    for (i = 0; i < NBONE; i++) CH.rot.push([0, 0, 0]);
+    chIbo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, chIbo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
+    CH.ni = idx.length; CH.tex = getTex(c.part.tex, A3D.tex);
+  }
+  function setRot(name, rx, ry, rz) { var r = CH.rot[BONE[name]]; if (r) { r[0] = rx || 0; r[1] = ry || 0; r[2] = rz || 0; } }
+  // pose: ph = fase langkah, mv = 0..1, pitch = arah bidik, sw = fraksi ayunan melee (0..1, <0 = tidak ada), melee
+  function poseChar(ph, mv, pitch, sw, melee) {
+    var i, c = CH, a = mv * 0.7 * Math.sin(ph), arc = sw >= 0 && sw <= 1 ? sw : -1;
+    for (i = 0; i < NBONE; i++) { c.rot[i][0] = c.rot[i][1] = c.rot[i][2] = 0; }
+    setRot('LeftUpLeg', a, 0, 0); setRot('RightUpLeg', -a, 0, 0);
+    setRot('LeftLeg', -mv * 0.85 * Math.max(0, Math.cos(ph)), 0, 0); setRot('RightLeg', -mv * 0.85 * Math.max(0, -Math.cos(ph)), 0, 0);
+    setRot('LeftFoot', mv * 0.25 * Math.max(0, Math.cos(ph)), 0, 0); setRot('RightFoot', mv * 0.25 * Math.max(0, -Math.cos(ph)), 0, 0);
+    setRot('Spine', pitch * 0.12, mv * 0.08 * Math.sin(ph), 0); setRot('Spine2', pitch * 0.18, 0, 0);
+    setRot('Head', pitch * 0.5, 0, 0);
+    var up = pitch * 0.75 - 0.55, chop = 0;
+    if (arc >= 0) chop = (1 - 2 * arc) * 1.1 * Math.sin(Math.PI * Math.min(1, arc * 1.05));
+    if (melee) up += 0.25;
+    setRot('LeftArm', up + chop, -1.3, 0); setRot('RightArm', up + chop, 1.3, 0);
+    setRot('LeftForeArm', 0, melee ? -0.5 : -0.95, 0); setRot('RightForeArm', 0, melee ? 0.5 : 0.95, 0);
+    setRot('LeftHand', 0, 0, 0.15); setRot('RightHand', 0, 0, -0.15);
+    var M = c.M, tmp, k, b, par, R, p;
+    for (k = 0; k < NBONE; k++) {
+      b = c.bones[k]; p = b;
+      R = mul(mRx(c.rot[k][0]), mul(mRy(c.rot[k][1]), mRz(c.rot[k][2])));
+      tmp = mul(mT(p.x, p.y, p.z), mul(R, mT(-p.x, -p.y, -p.z)));
+      if (b.p >= 0) { var pm = new Array(16), j; for (j = 0; j < 16; j++) pm[j] = M[b.p * 16 + j]; tmp = mul(pm, tmp); }
+      for (var q = 0; q < 16; q++) M[k * 16 + q] = tmp[q];
+    }
+  }
+  function skinChar(tint) {
+    var c = CH, M = c.M, P = c.pos, N = c.nor, BI = c.BI, BW = c.BW, out = c.out, n = c.n, i, k;
+    for (i = 0; i < n; i++) {
+      var x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2], nx = N[i * 3], ny = N[i * 3 + 1], nz = N[i * 3 + 2];
+      var px = 0, py = 0, pz = 0, qx = 0, qy = 0, qz = 0;
+      for (k = 0; k < 4; k++) {
+        var w = BW[i * 4 + k]; if (!w) continue; w /= 255;
+        var m = BI[i * 4 + k] * 16;
+        px += w * (M[m] * x + M[m + 4] * y + M[m + 8] * z + M[m + 12]);
+        py += w * (M[m + 1] * x + M[m + 5] * y + M[m + 9] * z + M[m + 13]);
+        pz += w * (M[m + 2] * x + M[m + 6] * y + M[m + 10] * z + M[m + 14]);
+        qx += w * (M[m] * nx + M[m + 4] * ny + M[m + 8] * nz);
+        qy += w * (M[m + 1] * nx + M[m + 5] * ny + M[m + 9] * nz);
+        qz += w * (M[m + 2] * nx + M[m + 6] * ny + M[m + 10] * nz);
+      }
+      var o = i * 12;
+      out[o] = px; out[o + 1] = py; out[o + 2] = pz; out[o + 3] = qx; out[o + 4] = qy; out[o + 5] = qz;
+      out[o + 8] = tint[0]; out[o + 9] = tint[1]; out[o + 10] = tint[2];
+    }
+    var h = c.head * 16;
+    for (i = 0; i < c.nf; i++) {
+      var fx0 = FACE[i * 4], fy0 = FACE[i * 4 + 1], fz0 = FACE[i * 4 + 2], fc = FACE[i * 4 + 3], o2 = (n + i) * 12;
+      out[o2] = M[h] * fx0 + M[h + 4] * fy0 + M[h + 8] * fz0 + M[h + 12];
+      out[o2 + 1] = M[h + 1] * fx0 + M[h + 5] * fy0 + M[h + 9] * fz0 + M[h + 13];
+      out[o2 + 2] = M[h + 2] * fx0 + M[h + 6] * fy0 + M[h + 10] * fz0 + M[h + 14];
+      out[o2 + 3] = -M[h + 2]; out[o2 + 4] = -M[h + 6]; out[o2 + 5] = -M[h + 10];
+      out[o2 + 8] = fc[0]; out[o2 + 9] = fc[1]; out[o2 + 10] = fc[2];
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, chBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, out, gl.DYNAMIC_DRAW);
+    bindVB(chBuf); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, chIbo);
+    gl.bindTexture(gl.TEXTURE_2D, c.tex);
+    gl.drawElements(gl.TRIANGLES, c.ni, gl.UNSIGNED_SHORT, 0);
   }
 
   // ================= state =================
@@ -190,8 +336,8 @@
     $('pk').textContent = 'Kill ' + stats.kills; $('pd').textContent = 'Mati ' + stats.deaths; $('pw').textContent = 'Menang ' + stats.wins;
     $('pbar').firstElementChild.style.width = ((stats.kills % 10) * 10) + '%';
   }
-  var LOBBY = { x: 16, z: 0, yaw: 0 };
-  var lobbyChar = { buf: [], w: 0, fl: -999, col: [0.86, 0.2, 0.2] };
+  var LOBBY = { x: MAP.lobby[0], z: MAP.lobby[1], yaw: MAP.lobby[2] };
+  var lobbyChar = { w: 0, fl: -999, col: [0.86, 0.5, 0.45] };
 
   function wdef() { return WP[S.lo[S.slot]]; }
   function slotOf(w) { return WP[w].slot; }
@@ -238,8 +384,8 @@
     if (!MAP.blocked(nx, S.z, S.y)) S.x = nx;
     var nz = S.z + vz * dt;
     if (!MAP.blocked(S.x, nz, S.y)) S.z = nz;
-    var lim = MAP.half - R;
-    S.x = Math.max(-lim, Math.min(lim, S.x)); S.z = Math.max(-lim, Math.min(lim, S.z));
+    var BD = MAP.bounds;
+    S.x = Math.max(BD[0] + R, Math.min(BD[1] - R, S.x)); S.z = Math.max(BD[2] + R, Math.min(BD[3] - R, S.z));
     S.moving = l > 0.1;
     if ((keys.Space || jumpQueued) && S.onGround) { S.vy = 7.6; S.onGround = false; }
     jumpQueued = false;
@@ -349,13 +495,14 @@
     if (r) { r.fired = now; r.fl = now; }
     var d = Math.hypot(o[0] - S.x, o[2] - S.z);
     if (!self) gunSound(m.w, Math.max(0, 1 - d / 60));
-    var melee = w.slot === 2, life = w.key === 'sniper' ? 170 : 90;
+    var melee = w.slot === 2, life = (w.key === 'sniper' || w.key === 'l118' || w.key === 'dmr') ? 170 : 90;
     for (i = 0; i < e.length; i++) {
       var end = e[i], st;
       if (!melee) {
         if (self) {
-          var dir = dirOf(S.yaw, S.pitch), rx = Math.cos(S.yaw), rz = -Math.sin(S.yaw), mz = MUZZLE[w.key];
-          st = [S.x + dir[0] * (0.35 - mz[2]) + rx * 0.17, S.y + EYE - 0.17 + dir[1] * (0.35 - mz[2]), S.z + dir[2] * (0.35 - mz[2]) + rz * 0.17];
+          var dir = dirOf(S.yaw, S.pitch), rx = Math.cos(S.yaw), rz = -Math.sin(S.yaw);
+          var upx = -rz * dir[1], upy = rz * dir[0] - rx * dir[2], upz = rx * dir[1], mq = vmMuz;
+          st = [S.x + rx * mq[0] + upx * mq[1] - dir[0] * mq[2], S.y + EYE + upy * mq[1] - dir[1] * mq[2], S.z + rz * mq[0] + upz * mq[1] - dir[2] * mq[2]];
         } else {
           var vx = end[0] - o[0], vy = end[1] - o[1], vz = end[2] - o[2], l = Math.hypot(vx, vy, vz) || 1;
           st = [o[0] + vx / l * 0.8, o[1] - 0.22 + vy / l * 0.8, o[2] + vz / l * 0.8];
@@ -525,23 +672,35 @@
   }
   window.addEventListener('resize', resize);
 
-  function drawPlayer(arr, id, p, r, now) {
-    var col = r.col || BODY[((roster[id] && roster[id].color) || 0) % 8];
-    var sw = p.mv ? Math.sin(now * 0.012) * 0.24 : 0;
-    var pants = [0.17, 0.18, 0.21];
-    pushBox(arr, p.x, p.y, p.z, p.yaw, -0.13, 0.4, sw, 0.1, 0.4, 0.12, pants, false);
-    pushBox(arr, p.x, p.y, p.z, p.yaw, 0.13, 0.4, -sw, 0.1, 0.4, 0.12, pants, false);
-    pushBox(arr, p.x, p.y, p.z, p.yaw, 0, 1.12, 0, 0.27, 0.36, 0.16, col, false);
-    pushBox(arr, p.x, p.y, p.z, p.yaw, 0, 1.64, 0, 0.17, 0.17, 0.17, [0.9, 0.74, 0.62], false);
-    pushBox(arr, p.x, p.y, p.z, p.yaw, 0, 1.71, -0.02, 0.18, 0.06, 0.17, [0.13, 0.14, 0.17], false);
-    var wk = WP[r.w] ? WP[r.w].key : 'ar', mdl = MODELS[wk];
+  // pose + gambar satu pemain (kerangka + senjata di tangan)
+  function drawPlayer(id, p, r, now) {
+    var tintBase = r.col || BODY[((roster[id] && roster[id].color) || 0) % 8];
+    var tint = [0.62 + 0.45 * tintBase[0], 0.62 + 0.45 * tintBase[1], 0.62 + 0.45 * tintBase[2]];
+    var w = WP[r.w] || WP[0], melee = w.slot === 2;
+    var dt = r.lt ? Math.min(100, now - r.lt) : 16; r.lt = now;
+    r.mva = (r.mva || 0) + ((p.mv ? 1 : 0) - (r.mva || 0)) * Math.min(1, dt / 90);
+    r.ph = (r.ph || 0) + dt * 0.0105 * r.mva;
+    var sw = melee ? (now - r.fl) / 320 : -1;
+    poseChar(r.ph, r.mva, p.pitch || 0, sw, melee);
+    var base = mul(mT(p.x, p.y, p.z), mRy(p.yaw));
+    setModel(base);
+    skinChar(tint);
+    var mdl = WM[w.key];
     if (mdl) {
-      var melee = WP[r.w].slot === 2, gx = 0.3, gy = 1.08, gz = melee ? -0.15 : -0.3;
-      mdl.forEach(function (b) { pushBox(arr, p.x, p.y, p.z, p.yaw, gx + b[0], gy + b[1], gz + b[2], b[3], b[4], b[5], b[6], false); });
-      if (now - r.fl < 60 && !melee) pushBox(arr, p.x, p.y, p.z, p.yaw, gx, gy + MUZZLE[wk][1], gz + MUZZLE[wk][2] - 0.05, 0.035, 0.035, 0.05, [1, 0.88, 0.45], true);
+      var len = mdl.size[2], pit = (p.pitch || 0) * 0.95;
+      var wm;
+      if (melee) wm = mul(base, mul(mT(0.0, 1.0, -0.38), mul(mRx(0.6), mRy(0))));
+      else wm = mul(base, mul(mT(0, 1.38, 0), mul(mRx(pit), mT(0.03, -0.27, -0.45))));
+      drawModel(w.key, wm);
+      if (!melee && now - r.fl < 60) {
+        var fa = [], mz = mdl.muzzle;
+        pushBox(fa, 0, 0, 0, 0, mz[0], mz[1], mz[2] - 0.04, 0.03, 0.03, 0.05, [1, 0.88, 0.45], true);
+        setModel(wm); drawDyn(fa);
+      }
     }
   }
 
+  var vmMuz = [0.17, -0.15, -0.9];
   function render(now) {
     gl.viewport(0, 0, glc.width, glc.height);
     gl.clearColor(FOG[0], FOG[1], FOG[2], 1);
@@ -551,8 +710,9 @@
     var cur = S.playing ? wdef() : null;
     if (!S.playing) {
       var ly = LOBBY.yaw, fwx = -Math.sin(ly), fwz = -Math.cos(ly), sdx = Math.cos(ly), sdz = -Math.sin(ly);
-      ex = LOBBY.x + fwx * 3.5 + sdx * 0.1; ey = 1.2; ez = LOBBY.z + fwz * 3.5 + sdz * 0.1;
-      tx = LOBBY.x; ty = 1.05; tz = LOBBY.z;
+      var dist = LOBBY.dist || 3.6, tgy = LOBBY.ty || 1.0;
+      ex = LOBBY.x + fwx * dist + sdx * 0.1; ey = LOBBY.dist ? tgy : 1.25; ez = LOBBY.z + fwz * dist + sdz * 0.1;
+      tx = LOBBY.x; ty = tgy; tz = LOBBY.z;
       fov = aspect < 1.1 ? 1.2 : 0.85;
     } else {
       var eyeY = S.y + (S.alive ? EYE : 0.45), d = dirOf(S.yaw, S.pitch);
@@ -562,28 +722,27 @@
     }
     fovNow = fov;
     eyeNow = [ex, ey, ez];
-    var P = persp(fov, aspect, 0.08, 260);
+    var P = persp(fov, aspect, 0.08, 300);
     VP = mul(P, lookAt(ex, ey, ez, tx, ty, tz));
     gl.useProgram(prog);
     gl.uniform3f(loc.light, 0.45, 0.82, 0.35);
-    gl.uniformMatrix4fv(loc.mvp, false, new Float32Array(VP));
-    gl.disable(gl.DEPTH_TEST);
-    drawBuf(floorBuf, floorCount);
-    gl.enable(gl.DEPTH_TEST);
-    drawBuf(staticBuf, staticCount);
+    gl.uniformMatrix4fv(loc.vp, false, new Float32Array(VP));
+    setModel(IDENT);
+    gl.bindBuffer(gl.ARRAY_BUFFER, groundBuf); bindVB(groundBuf); gl.bindTexture(gl.TEXTURE_2D, whiteTex); gl.drawArrays(gl.TRIANGLES, 0, groundCount);
+    for (var mi = 0; mi < mapParts.length; mi++) drawIdx(mapParts[mi]);
     if (!S.playing) {
-      var la = [], lp = { x: LOBBY.x, y: 0, z: LOBBY.z, yaw: LOBBY.yaw + Math.sin(now * 0.0009) * 0.35, mv: false };
-      lobbyChar.w = pick[0];
-      drawPlayer(la, 'lobby', lp, lobbyChar, now);
-      drawDyn(la);
+      var lp = { x: LOBBY.x, y: 0, z: LOBBY.z, yaw: LOBBY.yaw + (LOBBY.twist !== undefined ? LOBBY.twist : Math.sin(now * 0.0009) * 0.35), pitch: 0, mv: false };
+      lobbyChar.w = LOBBY.w !== undefined ? LOBBY.w : pick[0];
+      drawPlayer('lobby', lp, lobbyChar, now);
       return;
     }
 
     var arr = [], id, i;
     for (id in remotes) {
       var r = remotes[id]; if (!r.alive) continue;
-      var p = poseOf(r, now); if (p) drawPlayer(arr, id, p, r, now);
+      var p = poseOf(r, now); if (p) drawPlayer(id, p, r, now);
     }
+    setModel(IDENT);
     for (i = beams.length - 1; i >= 0; i--) {
       var bm = beams[i], age = now - bm.t;
       if (age > bm.life) { beams.splice(i, 1); continue; }
@@ -597,26 +756,35 @@
     }
     drawDyn(arr);
 
-    // senjata di tangan
-    if (S.alive && !(cur.zoom >= 2 && S.adsT > 0.85)) {
-      gl.clear(gl.DEPTH_BUFFER_BIT);
-      gl.uniformMatrix4fv(loc.mvp, false, new Float32Array(persp(fov, aspect, 0.02, 10)));
-      gl.uniform3f(loc.light, 0.3, 0.75, 0.6);
-      var g = [], mdl = MODELS[cur.key], melee = cur.slot === 2;
+    // senjata di tangan (first person)
+    var mdl = WM[cur.key], melee = cur.slot === 2;
+    if (mdl) {
+      var sz = mdl.size, len = sz[2], t = S.adsT, vm;
       var bob = S.moving && S.onGround ? Math.sin(bobT) * 0.007 : 0, bobx = S.moving && S.onGround ? Math.cos(bobT * 0.5) * 0.005 : 0;
-      var gx = lerp(0.17, 0.0, S.adsT) + bobx, gy = lerp(-0.17, -0.12, S.adsT) + bob + recoil * 0.01, gz = -0.56 + recoil * 0.05;
-      var rel = 0, sw = 0, swYaw = 0;
-      if (S.reloading) { var pr = (now - S.reloadStart) / (S.reloadEnd - S.reloadStart); rel = Math.sin(Math.min(1, pr) * Math.PI) * 0.16; }
-      if (now < S.switchEnd) rel = Math.max(rel, (S.switchEnd - now) / 260 * 0.28);
+      var rel = 0;
+      if (S.reloading) { var pr = (now - S.reloadStart) / (S.reloadEnd - S.reloadStart); rel = Math.sin(Math.min(1, pr) * Math.PI); }
+      if (now < S.switchEnd) rel = Math.max(rel, (S.switchEnd - now) / 260);
       if (melee) {
-        sw = Math.max(0, 1 - (now - S.swingT) / 260);
-        if (sw > 0) { var s2 = Math.sin(sw * Math.PI); swYaw = (cur.key === 'bat' ? 1.1 : 0.7) * s2; gz -= 0.12 * s2; gx -= 0.12 * s2; gy += cur.key === 'bat' ? 0.05 * s2 : 0; }
-        gx = 0.22 + (gx - 0.2); gy = -0.2 + (gy + 0.19); gz = gz + (cur.key === 'bat' ? 0.05 : 0.1);
+        var s = Math.max(0, Math.min(1, (now - S.swingT) / 280)), arc = S.swingT > 0 && s < 1 ? Math.sin(s * Math.PI) : 0, e = s < 1 ? s : 0;
+        vm = mul(mT(0.24 - 0.3 * arc + bobx, -0.26 + bob - rel * 0.3, -0.5 - 0.1 * arc), mul(mRy(0.15 - 0.9 * arc), mul(mRx(0.75 - (e > 0 ? 1.7 * e : 0)), mRz(-0.12 + 0.5 * arc))));
+      } else {
+        var cy = lerp(-0.17 - mdl.muzzle[1], -0.012 - mdl.top, t) + bob + recoil * 0.008 - rel * 0.2;
+        var cz = lerp(-0.36, -0.24, t) - len / 2 + recoil * 0.05 + rel * 0.04;
+        vm = mul(mT(lerp(0.16, 0, t) + bobx, cy, cz), mul(mRx(rel * 0.45 + recoil * 0.02), mRz(rel * 0.25)));
       }
-      gy -= rel;
-      mdl.forEach(function (b) { pushBox(g, gx, gy, gz, swYaw, b[0], b[1], b[2], b[3], b[4], b[5], b[6], false); });
-      if (now - muzzleT < 55 && !melee) pushBox(g, gx, gy, gz, 0, 0, MUZZLE[cur.key][1], MUZZLE[cur.key][2] - 0.04, 0.03, 0.03, 0.05, [1, 0.88, 0.45], true);
-      drawDyn(g);
+      var mzp = xf(vm, mdl.muzzle); vmMuz = mzp;
+      if (S.alive && !(cur.zoom >= 2 && S.adsT > 0.85)) {
+        gl.clear(gl.DEPTH_BUFFER_BIT);
+        gl.uniformMatrix4fv(loc.vp, false, new Float32Array(persp(fov, aspect, 0.02, 10)));
+        gl.uniform3f(loc.light, 0.3, 0.75, 0.6);
+        drawModel(cur.key, vm);
+        if (now - muzzleT < 55 && !melee) {
+          var fa = [], mz = mdl.muzzle;
+          pushBox(fa, 0, 0, 0, 0, mz[0], mz[1], mz[2] - 0.035, 0.028, 0.028, 0.045, [1, 0.88, 0.45], true);
+          setModel(vm); drawDyn(fa);
+        }
+        setModel(IDENT);
+      }
     }
   }
 
@@ -630,14 +798,14 @@
   // ================= minimap =================
   var mmLayer = null, MMK = 2.4;
   function buildMinimap() {
-    var n = Math.round(MAP.half * 2 * MMK);
-    mmLayer = document.createElement('canvas'); mmLayer.width = mmLayer.height = n;
+    var BD = MAP.bounds, w = BD[1] - BD[0], h = BD[3] - BD[2];
+    mmLayer = document.createElement('canvas'); mmLayer.width = Math.round(w * MMK); mmLayer.height = Math.round(h * MMK);
     var c = mmLayer.getContext('2d');
-    c.fillStyle = '#35604a'; c.fillRect(0, 0, n, n);
+    c.fillStyle = '#35604a'; c.fillRect(0, 0, mmLayer.width, mmLayer.height);
     c.fillStyle = '#9fb7c9';
     MAP.boxes.forEach(function (b) {
       if (b[4] - b[1] < 1.2 || b[1] > 1) return;
-      c.fillRect((b[0] + MAP.half) * MMK, (b[2] + MAP.half) * MMK, (b[3] - b[0]) * MMK, (b[5] - b[2]) * MMK);
+      c.fillRect((b[0] - BD[0]) * MMK, (b[2] - BD[2]) * MMK, Math.max(1, (b[3] - b[0]) * MMK), Math.max(1, (b[5] - b[2]) * MMK));
     });
   }
   function drawMinimap(now) {
@@ -651,7 +819,7 @@
     fx.transform(sc * cs, sc * sn, -sc * sn, sc * cs, 0, 0);
     fx.translate(-S.x, -S.z);
     fx.globalAlpha = 0.9;
-    fx.drawImage(mmLayer, -MAP.half, -MAP.half, MAP.half * 2, MAP.half * 2);
+    fx.drawImage(mmLayer, MAP.bounds[0], MAP.bounds[2], MAP.bounds[1] - MAP.bounds[0], MAP.bounds[3] - MAP.bounds[2]);
     fx.restore();
     // musuh
     for (var id in remotes) {
@@ -933,5 +1101,5 @@
   openMenu('join');
   setStickUI(false);
   requestAnimationFrame(frame);
-  window.__arena = { S: S, remotes: remotes, LOBBY: LOBBY };
+  window.__arena = { S: S, remotes: remotes, LOBBY: LOBBY, mapParts: mapParts };
 })();

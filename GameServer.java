@@ -473,9 +473,10 @@ public final class GameServer {
     }
 
     private int[] randomLoadout() {
-        int[] primaries = {0, 0, 1, 1, 2, 3, 4};
+        int[] primaries = {0, 0, 1, 1, 2, 3, 4, 10, 10, 11, 12};
         int[] secondaries = {5, 5, 6, 7};
-        return new int[]{primaries[rnd.nextInt(primaries.length)], secondaries[rnd.nextInt(secondaries.length)], 8 + rnd.nextInt(2)};
+        int[] melee = {8, 9, 13};
+        return new int[]{primaries[rnd.nextInt(primaries.length)], secondaries[rnd.nextInt(secondaries.length)], melee[rnd.nextInt(melee.length)]};
     }
 
     // ------------------------------------------------------------ bot: jumlah
@@ -723,10 +724,9 @@ public final class GameServer {
 
             if (t.equals("state")) {
                 if (!me.alive) return;
-                double lim = GameMap.HALF - 0.4;
-                me.x = num(m.get("x"), -lim, lim, me.x);
+                me.x = num(m.get("x"), GameMap.MINX, GameMap.MAXX, me.x);
                 me.y = num(m.get("y"), -2, 40, me.y);
-                me.z = num(m.get("z"), -lim, lim, me.z);
+                me.z = num(m.get("z"), GameMap.MINZ, GameMap.MAXZ, me.z);
                 me.yaw = num(m.get("yaw"), -1000, 1000, me.yaw);
                 me.pitch = num(m.get("pitch"), -1.6, 1.6, me.pitch);
                 int w = (int) num(m.get("w"), -1, WeaponDefs.COUNT, -1);
@@ -814,13 +814,15 @@ public final class GameServer {
         if (!GameMap.blocked(nx, b.z, 0)) b.x = nx;
         double nz = b.z + vz * dt;
         if (!GameMap.blocked(b.x, nz, 0)) b.z = nz;
-        double lim = GameMap.HALF - 0.4;
-        b.x = Math.max(-lim, Math.min(lim, b.x));
-        b.z = Math.max(-lim, Math.min(lim, b.z));
+        b.x = Math.max(GameMap.MINX + 0.4, Math.min(GameMap.MAXX - 0.4, b.x));
+        b.z = Math.max(GameMap.MINZ + 0.4, Math.min(GameMap.MAXZ - 0.4, b.z));
     }
 
     private static double preferredDistance(int w) {
         switch (w) {
+            case 12: return 60;  // sniper berat
+            case 11: return 35;  // dmr
+            case 10: return 20;  // ak-47
             case 3: return 45;   // sniper
             case 4: return 24;   // lmg
             case 0: return 18;   // karabin
@@ -842,7 +844,7 @@ public final class GameServer {
         Player best = null;
         double bd = 1e9;
         double fx = -Math.sin(b.yaw), fz = -Math.cos(b.yaw);
-        double viewR = b.lo[0] == 3 ? 130 : 75;
+        double viewR = (b.lo[0] == 3 || b.lo[0] == 12) ? 130 : 75;
         for (Player q : players.values()) {
             if (q == b || !q.alive) continue;
             double dx = q.x - b.x, dz = q.z - b.z, d = Math.hypot(dx, dz);
