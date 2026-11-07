@@ -10,7 +10,7 @@
 
   var BODY = [[0.46, 0.5, 0.56], [0.55, 0.42, 0.4], [0.42, 0.52, 0.45], [0.5, 0.47, 0.38], [0.45, 0.43, 0.56], [0.55, 0.5, 0.45], [0.38, 0.5, 0.54], [0.54, 0.42, 0.5]];
   var FOG = [0.55, 0.76, 0.95];
-  var EYE = 1.55, SLOT_NAMES = ['Utama', 'Sekunder', 'Jarak dekat'], DIFF = ['Mudah', 'Sedang', 'Sulit'];
+  var EYE = 1.55, EYE_ST = [1.55, 1.05, 0.5], SPD_ST = [1, 0.55, 0.3], SLOT_NAMES = ['Utama', 'Sekunder', 'Jarak dekat'], DIFF = ['Mudah', 'Sedang', 'Sulit'];
 
   // ================= matematika =================
   function persp(f, a, n, fa) {
@@ -316,7 +316,7 @@
     ws: null, id: 0, playing: false, paused: false, alive: false, hp: 100, kills: 0, deaths: 0,
     killLimit: 15, matchOver: false, bots: 0, diff: 1, x: 0, y: 0, z: 0, vy: 0, onGround: true, yaw: 0, pitch: 0, ping: 30,
     lo: MAP.defaultLoadout.slice(), slot: 0, mag: [0, 0, 0], res: [0, 0, 0], reloading: false, reloadEnd: 0, reloadStart: 0,
-    climb: false, switchEnd: 0, ads: false, adsT: 0, latch: false, lastFire: [0, 0, 0], swingT: -999, deathAt: 0, killer: -1, killerW: 0
+    climb: false, stance: 0, eyeH: 1.55, switchEnd: 0, ads: false, adsT: 0, latch: false, lastFire: [0, 0, 0], swingT: -999, deathAt: 0, killer: -1, killerW: 0
   };
   var pick = MAP.defaultLoadout.slice();    // pilihan di lobi
   var roster = {}, remotes = {};
@@ -377,7 +377,9 @@
     fwd += -stick.y; str += stick.x;
     var l = Math.hypot(fwd, str); if (l > 1) { fwd /= l; str /= l; }
     var run = keys.ShiftLeft || keys.ShiftRight || (isTouch && l > 0.9);
-    var sp = (run ? 8.6 : 6.4) * wdef().speed * (1 - 0.4 * S.adsT);
+    S.eyeH += (EYE_ST[S.stance] - S.eyeH) * Math.min(1, dt * 12);
+    if (S.climb) S.stance = 0;
+    var sp = (run && S.stance === 0 ? 8.6 : 6.4) * SPD_ST[S.stance] * wdef().speed * (1 - 0.4 * S.adsT);
     var sy = Math.sin(S.yaw), cy = Math.cos(S.yaw);
     var vx = (-sy * fwd + cy * str) * sp, vz = (-cy * fwd - sy * str) * sp;
     // ---- tangga (kincir angin): maju = naik, mundur = turun, lompat = lepas ----
@@ -391,7 +393,7 @@
         if (near && fwd > 0.3 && -sy > 0.25) { S.climb = true; S.vy = 0; S.onGround = false; }
       }
       if (S.climb) {
-        if (keys.Space || jumpQueued) { S.climb = false; S.vy = 6; S.x -= 0.6; jumpQueued = false; S.onGround = false; }
+        if (keys.Space || jumpQueued) { S.stance = 0; S.climb = false; S.vy = 6; S.x -= 0.6; jumpQueued = false; S.onGround = false; }
         else {
           S.y += fwd * 3.2 * dt;
           if (S.y >= LD.top) S.y = LD.top;
@@ -476,7 +478,7 @@
         }
         break;
       case 'respawn':
-        S.climb = false;
+        S.climb = false; S.stance = 0; S.eyeH = EYE;
         S.x = m.x; S.y = m.y; S.z = m.z; S.yaw = m.yaw; S.pitch = 0; S.vy = 0; S.onGround = true;
         S.alive = true; S.hp = 100; fireHeld = false;
         if (m.lo) setLoadout(m.lo);
@@ -493,7 +495,7 @@
         dmgDirs.push({ ax: m.ax, az: m.az, t: now });
         beep(110, 0.16, 'sawtooth', 0.2, 0.5);
         if (m.hp <= 0) {
-          S.alive = false; S.climb = false; S.hp = 0; fireHeld = false; S.ads = false; S.deathAt = now; S.killer = m.a; S.killerW = m.w;
+          S.alive = false; S.climb = false; S.stance = 0; S.hp = 0; fireHeld = false; S.ads = false; S.deathAt = now; S.killer = m.a; S.killerW = m.w;
           $('dwho').textContent = 'Dikalahkan ' + nameOf(m.a);
           show('dead', true);
         }
@@ -523,7 +525,7 @@
         if (self) {
           var dir = dirOf(S.yaw, S.pitch), rx = Math.cos(S.yaw), rz = -Math.sin(S.yaw);
           var upx = -rz * dir[1], upy = rz * dir[0] - rx * dir[2], upz = rx * dir[1], mq = vmMuz;
-          st = [S.x + rx * mq[0] + upx * mq[1] - dir[0] * mq[2], S.y + EYE + upy * mq[1] - dir[1] * mq[2], S.z + rz * mq[0] + upz * mq[1] - dir[2] * mq[2]];
+          st = [S.x + rx * mq[0] + upx * mq[1] - dir[0] * mq[2], S.y + S.eyeH + upy * mq[1] - dir[1] * mq[2], S.z + rz * mq[0] + upz * mq[1] - dir[2] * mq[2]];
         } else {
           var vx = end[0] - o[0], vy = end[1] - o[1], vz = end[2] - o[2], l = Math.hypot(vx, vy, vz) || 1;
           st = [o[0] + vx / l * 0.8, o[1] - 0.22 + vy / l * 0.8, o[2] + vz / l * 0.8];
@@ -551,20 +553,23 @@
     rs.sort(function (a, b) { return b.k - a.k || a.d - b.d; });
     return rs;
   }
+  var PAPAN = $('papanImg') ? $('papanImg').src : '';
   function updateScoreboard() {
-    var rs = rows(), list = sbFull ? rs : rs.slice(0, 4), h = '';
-    if (sbFull) h += '<div class="hd"><span>Papan skor</span><span>Target ' + S.killLimit + '</span></div>';
-    list.forEach(function (r) {
-      h += '<div class="r' + (r.me ? ' me' : '') + '"><span class="n">' + esc(r.name) + (r.bot ? '<span class="bt">BOT</span>' : '') + '</span><span class="k">' + r.k + '</span>' +
-        (sbFull ? '<span class="k">' + r.d + '</span>' : '') + '</div>';
+    var rs = rows(), list = sbFull ? rs : rs.slice(0, 6), hr = [];
+    list.forEach(function (r, i) {
+      hr.push('<div class="r' + (r.me ? ' me' : '') + '"><span class="p">' + (i + 1) + '</span><span class="n">' + esc(r.name) + (r.bot ? '<span class="bt">BOT</span>' : '') + '</span><span class="k">' + r.k + '</span>' +
+        (sbFull ? '<span class="d">' + r.d + '</span>' : '') + '</div>');
     });
-    if (!sbFull && rs.length > 4) {
+    if (!sbFull && rs.length > 6) {
       var mine = rs.findIndex(function (r) { return r.me; });
-      if (mine >= 4) h += '<div class="r me"><span class="n">' + (mine + 1) + '. ' + esc(rs[mine].name) + '</span><span class="k">' + rs[mine].k + '</span></div>';
+      if (mine >= 6) hr[5] = '<div class="r me"><span class="p">' + (mine + 1) + '</span><span class="n">' + esc(rs[mine].name) + '</span><span class="k">' + rs[mine].k + '</span></div>';
     }
+    var h = '<div class="hd"><img src="' + PAPAN + '" alt="Papan score">' + (sbFull ? '<span class="tl">Target ' + S.killLimit + '</span>' : '') + '</div>' + hr.join('');
+    var key = (sbFull ? 'F' : 'S') + h;
     sb.className = sbFull ? 'full' : '';
-    sb.innerHTML = h;
+    if (key !== lastSb) { lastSb = key; sb.innerHTML = h; }
   }
+  var lastSb = '';
   function buildSlots() {
     var h = '';
     for (var i = 0; i < 3; i++) h += '<div class="slot' + (i === S.slot ? ' on' : '') + '" data-s="' + i + '"><u>' + (i + 1) + '</u><b>' + esc(WP[S.lo[i]].name) + '</b><i></i></div>';
@@ -690,6 +695,7 @@
     W = window.innerWidth; H = window.innerHeight;
     glc.width = fxc.width = Math.round(W * DPR); glc.height = fxc.height = Math.round(H * DPR);
     fx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    try { if (stickT == null) setStickUI(false); } catch (e) { /* abaikan */ }
   }
   window.addEventListener('resize', resize);
 
@@ -736,7 +742,7 @@
       tx = LOBBY.x; ty = tgy; tz = LOBBY.z;
       fov = aspect < 1.1 ? 1.2 : 0.85;
     } else {
-      var eyeY = S.y + (S.alive ? EYE : 0.45), d = dirOf(S.yaw, S.pitch);
+      var eyeY = S.y + (S.alive ? S.eyeH : 0.45), d = dirOf(S.yaw, S.pitch);
       ex = S.x; ey = eyeY; ez = S.z; tx = ex + d[0]; ty = ey + d[1]; tz = ez + d[2];
       var zoom = 1 + (cur.zoom - 1) * S.adsT;
       fov = 2 * Math.atan(Math.tan(fov / 2) / zoom);
@@ -822,42 +828,43 @@
     var BD = MAP.bounds, w = BD[1] - BD[0], h = BD[3] - BD[2];
     mmLayer = document.createElement('canvas'); mmLayer.width = Math.round(w * MMK); mmLayer.height = Math.round(h * MMK);
     var c = mmLayer.getContext('2d');
-    c.fillStyle = '#35604a'; c.fillRect(0, 0, mmLayer.width, mmLayer.height);
-    c.fillStyle = '#9fb7c9';
+    c.fillStyle = '#99bc78'; c.fillRect(0, 0, mmLayer.width, mmLayer.height);
+    c.fillStyle = '#6f7f63';
     MAP.boxes.forEach(function (b) {
       if (b[4] - b[1] < 1.2 || b[1] > 1) return;
       c.fillRect((b[0] - BD[0]) * MMK, (b[2] - BD[2]) * MMK, Math.max(1, (b[3] - b[0]) * MMK), Math.max(1, (b[5] - b[2]) * MMK));
     });
   }
+  function rrect(c, x, y, w, h, r) {
+    c.beginPath(); c.moveTo(x, y); c.lineTo(x + w - r, y); c.arcTo(x + w, y, x + w, y + r, r); c.lineTo(x + w, y + h - r); c.arcTo(x + w, y + h, x + w - r, y + h, r);
+    c.lineTo(x, y + h); c.closePath();
+  }
   function drawMinimap(now) {
-    var Rr = rem * 4.6, cx = rem * 5.3, cy = rem * 5.3, range = 40, sc = Rr / range;
+    var u = H / 896, bx = 0, by = 8.6 * u, bw = 312 * u, bh = 226 * u, cx = bx + bw / 2, cy = by + bh / 2, range = 34, sc = (bh / 2) / range * 1.0;
     fx.save();
-    fx.beginPath(); fx.arc(cx, cy, Rr, 0, Math.PI * 2); fx.clip();
-    fx.fillStyle = 'rgba(24,52,40,.82)'; fx.fillRect(cx - Rr, cy - Rr, Rr * 2, Rr * 2);
+    rrect(fx, bx, by, bw, bh, 30 * u); fx.clip();
+    fx.fillStyle = '#99bc78'; fx.fillRect(bx, by, bw, bh);
     var cs = Math.cos(S.yaw), sn = Math.sin(S.yaw);
     fx.save();
     fx.translate(cx, cy);
     fx.transform(sc * cs, sc * sn, -sc * sn, sc * cs, 0, 0);
     fx.translate(-S.x, -S.z);
-    fx.globalAlpha = 0.9;
+    fx.globalAlpha = 0.95;
     fx.drawImage(mmLayer, MAP.bounds[0], MAP.bounds[2], MAP.bounds[1] - MAP.bounds[0], MAP.bounds[3] - MAP.bounds[2]);
     fx.restore();
-    // musuh
     for (var id in remotes) {
       var r = remotes[id]; if (!r.alive) continue;
       var p = poseOf(r, now); if (!p) continue;
       var dx = p.x - S.x, dz = p.z - S.z, dist = Math.hypot(dx, dz), fired = now - r.fired < 2500;
-      if (dist > 35 && !fired) continue;
-      var sx = (cs * dx - sn * dz) * sc, sy = (sn * dx + cs * dz) * sc, l = Math.hypot(sx, sy);
-      if (l > Rr - 4) { sx *= (Rr - 4) / l; sy *= (Rr - 4) / l; }
-      fx.fillStyle = '#ff5b5b'; fx.beginPath(); fx.arc(cx + sx, cy + sy, 2.6, 0, Math.PI * 2); fx.fill();
+      if (dist > 40 && !fired) continue;
+      var sx = (cs * dx - sn * dz) * sc, sy = (sn * dx + cs * dz) * sc;
+      var mx = bw / 2 - 8 * u, my = bh / 2 - 8 * u, k = Math.max(Math.abs(sx) / mx, Math.abs(sy) / my, 1);
+      sx /= k; sy /= k;
+      fx.fillStyle = '#e8403f'; fx.beginPath(); fx.arc(cx + sx, cy + sy, 5 * u, 0, Math.PI * 2); fx.fill();
     }
+    var a = 9 * u;
+    fx.fillStyle = '#fff'; fx.beginPath(); fx.moveTo(cx, cy - a * 1.3); fx.lineTo(cx + a, cy + a); fx.lineTo(cx, cy + a * 0.45); fx.lineTo(cx - a, cy + a); fx.closePath(); fx.fill();
     fx.restore();
-    fx.strokeStyle = '#151515'; fx.lineWidth = 5;
-    fx.beginPath(); fx.arc(cx, cy, Rr, 0, Math.PI * 2); fx.stroke();
-    fx.strokeStyle = '#ffd23f'; fx.lineWidth = 2;
-    fx.beginPath(); fx.arc(cx, cy, Rr - 1, 0, Math.PI * 2); fx.stroke();
-    fx.fillStyle = '#fff'; fx.beginPath(); fx.moveTo(cx, cy - 5); fx.lineTo(cx + 3.6, cy + 4); fx.lineTo(cx, cy + 2); fx.lineTo(cx - 3.6, cy + 4); fx.closePath(); fx.fill();
   }
 
   // ================= overlay 2D (crosshair, nama, arah serangan, scope) =================
@@ -946,12 +953,16 @@
     drawFx(now);
   }
 
+  function toggleStance(n) { if (!S.alive || S.climb) return; S.stance = S.stance === n ? 0 : n; syncStanceBtns(); }
+  function syncStanceBtns() { $('bCrouch').classList.toggle('on', S.stance === 1); $('bProne').classList.toggle('on', S.stance === 2); }
   // ================= input PC =================
   document.addEventListener('keydown', function (e) {
     if (!S.playing || e.target.tagName === 'INPUT') return;
     if (e.code === 'Tab') { e.preventDefault(); if (!sbFull) { sbFull = true; updateScoreboard(); } return; }
     if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.code) >= 0) e.preventDefault();
     if (e.code === 'KeyR') startReload(performance.now());
+    if (e.code === 'KeyC') toggleStance(1);
+    if (e.code === 'KeyZ') toggleStance(2);
     if (e.code === 'Digit1') switchTo(0);
     if (e.code === 'Digit2') switchTo(1);
     if (e.code === 'Digit3') switchTo(2);
@@ -993,10 +1004,11 @@
   document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
   // ================= input sentuh =================
-  var tz = $('tz'), lookT = null, stickT = null, stickO = null, STICK_MAX = 50;
+  var tz = $('tz'), lookT = null, stickT = null, stickO = null, STICK_MAX = 50, uu = 1;
   function setStickUI(on, x, y, kx, ky) {
-    if (!on) { x = kx = rem * 5.8; y = ky = H - rem * 5.6; }
-    var bs = rem * 3.7, ks = rem * 1.8;
+    uu = H / 896; STICK_MAX = 64 * uu;
+    if (!on) { x = kx = 242.4 * uu + (window.safeL || 0); y = ky = 665.2 * uu; }
+    var bs = 122.6 * uu, ks = 69 * uu;
     $('stickB').style.left = (x - bs) + 'px'; $('stickB').style.top = (y - bs) + 'px';
     $('stickK').style.left = (kx - ks) + 'px'; $('stickK').style.top = (ky - ks) + 'px';
   }
@@ -1042,12 +1054,12 @@
     el.addEventListener('touchend', u, { passive: false }); el.addEventListener('touchcancel', u, { passive: false });
   }
   bindBtn('bFire', function () { fireHeld = true; $('bFire').classList.add('on'); }, function () { fireHeld = false; $('bFire').classList.remove('on'); });
-  bindBtn('bJump', function () { jumpQueued = true; }, function () {});
+  bindBtn('bJump', function () { jumpQueued = true; S.stance = 0; syncStanceBtns(); }, function () {});
   bindBtn('bRel', function () { startReload(performance.now()); }, function () {});
-  bindBtn('bSwap', function () { switchTo((S.slot + 1) % 3); }, function () {});
+  bindBtn('bCrouch', function () { toggleStance(1); }, function () {});
+  bindBtn('bProne', function () { toggleStance(2); }, function () {});
   bindBtn('bAds', function () { S.ads = !S.ads; $('bAds').classList.toggle('on', S.ads); }, function () {});
-  $('topc').style.pointerEvents = 'auto';
-  $('topc').addEventListener('pointerdown', function () { if (isTouch) { sbFull = !sbFull; sbHold = sbFull ? performance.now() + 5000 : 0; updateScoreboard(); } });
+  $('sb').addEventListener('pointerdown', function () { if (isTouch) { sbFull = !sbFull; sbHold = sbFull ? performance.now() + 5000 : 0; updateScoreboard(); } });
 
   // ================= lobi =================
   function spec(w) {
@@ -1095,7 +1107,7 @@
     $('mBack').hidden = false;
     $('mBack').addEventListener('click', function () { window.Android.back(); });
   }
-  $('mSrv').textContent = (location.host ? 'Server ' + location.host : '');
+  $('mSrv').textContent = (location.host || '');
   $('name').addEventListener('input', drawProfile);
 
   function start() {
