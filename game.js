@@ -828,7 +828,7 @@
     var BD = MAP.bounds, w = BD[1] - BD[0], h = BD[3] - BD[2];
     mmLayer = document.createElement('canvas'); mmLayer.width = Math.round(w * MMK); mmLayer.height = Math.round(h * MMK);
     var c = mmLayer.getContext('2d');
-    c.fillStyle = '#99bc78'; c.fillRect(0, 0, mmLayer.width, mmLayer.height);
+    c.fillStyle = '#525252'; c.fillRect(0, 0, mmLayer.width, mmLayer.height);
     c.fillStyle = '#6f7f63';
     MAP.boxes.forEach(function (b) {
       if (b[4] - b[1] < 1.2 || b[1] > 1) return;
@@ -843,7 +843,7 @@
     var u = H / 896, bx = 0, by = 8.6 * u, bw = 312 * u, bh = 226 * u, cx = bx + bw / 2, cy = by + bh / 2, range = 34, sc = (bh / 2) / range * 1.0;
     fx.save();
     rrect(fx, bx, by, bw, bh, 30 * u); fx.clip();
-    fx.fillStyle = '#99bc78'; fx.fillRect(bx, by, bw, bh);
+    fx.fillStyle = '#525252'; fx.fillRect(bx, by, bw, bh);
     var cs = Math.cos(S.yaw), sn = Math.sin(S.yaw);
     fx.save();
     fx.translate(cx, cy);
