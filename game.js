@@ -154,7 +154,7 @@
     var vs = 'attribute vec3 aPos;attribute vec3 aNor;attribute vec2 aUV;attribute vec3 aCol;attribute float aMat;uniform mat4 uVP;uniform mat4 uModel;uniform vec3 uLight;' +
       'varying vec3 vCol;varying vec2 vUV;varying float vD;varying float vMat;varying float vSh;' +
       'void main(){gl_Position=uVP*(uModel*vec4(aPos,1.0));vD=gl_Position.w;vec3 n=(uModel*vec4(aNor,0.0)).xyz;' +
-      'float l=length(n);float fl=l>0.5?(0.55+0.45*max(dot(n/l,uLight),0.0)):1.0;vSh=fl;vCol=aCol;vUV=aUV;vMat=aMat;}';
+      'float l=length(n);float fl=l>0.5?(0.7+0.38*max(dot(n/l,uLight),0.0)):1.0;vSh=fl;vCol=aCol;vUV=aUV;vMat=aMat;}';
     var fs = '#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\n' +
       'varying vec3 vCol;varying vec2 vUV;varying float vD;varying float vMat;varying float vSh;uniform vec3 uFog;uniform sampler2D uTex;' +
       'void main(){vec3 c=vCol;if(vMat>0.5){c=texture2D(uTex,vUV).rgb*vCol;}c*=vSh;' +
@@ -176,7 +176,7 @@
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 
     // tanah dasar (hijau, di bawah mesh peta)
-    var ga = [], g = [0.36, 0.6, 0.28];
+    var ga = [], g = [0.4, 0.72, 0.28];
     var B = MAP.bounds, ex = 300;
     V(ga, -ex, -0.03, -ex, 0, 1, 0, g, 0); V(ga, -ex, -0.03, ex, 0, 1, 0, g, 0); V(ga, ex, -0.03, ex, 0, 1, 0, g, 0);
     V(ga, -ex, -0.03, -ex, 0, 1, 0, g, 0); V(ga, ex, -0.03, ex, 0, 1, 0, g, 0); V(ga, ex, -0.03, -ex, 0, 1, 0, g, 0);
@@ -316,7 +316,7 @@
     ws: null, id: 0, playing: false, paused: false, alive: false, hp: 100, kills: 0, deaths: 0,
     killLimit: 15, matchOver: false, bots: 0, diff: 1, x: 0, y: 0, z: 0, vy: 0, onGround: true, yaw: 0, pitch: 0, ping: 30,
     lo: MAP.defaultLoadout.slice(), slot: 0, mag: [0, 0, 0], res: [0, 0, 0], reloading: false, reloadEnd: 0, reloadStart: 0,
-    switchEnd: 0, ads: false, adsT: 0, latch: false, lastFire: [0, 0, 0], swingT: -999, deathAt: 0, killer: -1, killerW: 0
+    climb: false, switchEnd: 0, ads: false, adsT: 0, latch: false, lastFire: [0, 0, 0], swingT: -999, deathAt: 0, killer: -1, killerW: 0
   };
   var pick = MAP.defaultLoadout.slice();    // pilihan di lobi
   var roster = {}, remotes = {};
@@ -367,7 +367,7 @@
   function gunSound(w, vol) { var s = WP[w].snd; beep(s[0], s[1], s[2], s[3] * vol, s[4]); }
 
   // ================= fisika pemain =================
-  var R = 0.4, STEP = 0.55, HEIGHT = 1.8;
+  var R = 0.4, STEP = 0.8, HEIGHT = 1.8;
   function moveLocal(dt) {
     var fwd = 0, str = 0;
     if (keys.KeyW || keys.ArrowUp) fwd += 1;
@@ -380,6 +380,26 @@
     var sp = (run ? 8.6 : 6.4) * wdef().speed * (1 - 0.4 * S.adsT);
     var sy = Math.sin(S.yaw), cy = Math.cos(S.yaw);
     var vx = (-sy * fwd + cy * str) * sp, vz = (-cy * fwd - sy * str) * sp;
+    // ---- tangga (kincir angin): maju = naik, mundur = turun, lompat = lepas ----
+    var LD = MAP.ladders && MAP.ladders[0];
+    if (LD) {
+      var lxf = function (y) { return LD.x0 + LD.sx * y - 0.45; }, lzf = function (y) { return LD.z0 + LD.sz * y; };
+      if (!S.climb) {
+        var near = S.y <= LD.top && Math.hypot(S.x - lxf(S.y), S.z - lzf(S.y)) < 1.1;
+        if (near && !S.laddHint && S.playing) { S.laddHint = true; toast('Hadap tangga + maju untuk memanjat'); }
+        if (!near) S.laddHint = false;
+        if (near && fwd > 0.3 && -sy > 0.25) { S.climb = true; S.vy = 0; S.onGround = false; }
+      }
+      if (S.climb) {
+        if (keys.Space || jumpQueued) { S.climb = false; S.vy = 6; S.x -= 0.6; jumpQueued = false; S.onGround = false; }
+        else {
+          S.y += fwd * 3.2 * dt;
+          if (S.y >= LD.top) S.y = LD.top;
+          if (S.y <= 0) { S.y = 0; if (fwd < 0) S.climb = false; }
+          if (S.climb) { S.x = lxf(S.y); S.z = lzf(S.y); S.vy = 0; S.moving = Math.abs(fwd) > 0.1; return; }
+        }
+      }
+    }
     var nx = S.x + vx * dt;
     if (!MAP.blocked(nx, S.z, S.y)) S.x = nx;
     var nz = S.z + vz * dt;
@@ -456,6 +476,7 @@
         }
         break;
       case 'respawn':
+        S.climb = false;
         S.x = m.x; S.y = m.y; S.z = m.z; S.yaw = m.yaw; S.pitch = 0; S.vy = 0; S.onGround = true;
         S.alive = true; S.hp = 100; fireHeld = false;
         if (m.lo) setLoadout(m.lo);
@@ -472,7 +493,7 @@
         dmgDirs.push({ ax: m.ax, az: m.az, t: now });
         beep(110, 0.16, 'sawtooth', 0.2, 0.5);
         if (m.hp <= 0) {
-          S.alive = false; S.hp = 0; fireHeld = false; S.ads = false; S.deathAt = now; S.killer = m.a; S.killerW = m.w;
+          S.alive = false; S.climb = false; S.hp = 0; fireHeld = false; S.ads = false; S.deathAt = now; S.killer = m.a; S.killerW = m.w;
           $('dwho').textContent = 'Dikalahkan ' + nameOf(m.a);
           show('dead', true);
         }
