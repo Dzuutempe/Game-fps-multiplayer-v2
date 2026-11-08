@@ -88,6 +88,7 @@ public final class GameServer {
         cache.put("/index.html", cache.get("/"));
         cache.put("/game.js", assets.get("game.js"));
         cache.put("/map.js", assets.get("map.js"));
+        try { cache.put("/mapdata.js", assets.get("mapdata.js")); } catch (IOException e) { /* data peta tambahan tidak ada */ }
 
         ServerSocket ss = new ServerSocket();
         ss.setReuseAddress(true);
@@ -715,7 +716,7 @@ public final class GameServer {
                 players.put(me.id, me);
                 balanceBots();
                 spawn(me);
-                conn.send("{\"t\":\"welcome\",\"id\":" + me.id + ",\"killLimit\":" + killLimit + ",\"matchOver\":" + matchOver +
+                conn.send("{\"t\":\"welcome\",\"map\":\"" + GameMap.IDS[Math.max(0, GameMap.curId)] + "\",\"id\":" + me.id + ",\"killLimit\":" + killLimit + ",\"matchOver\":" + matchOver +
                         ",\"bots\":" + botsWanted + ",\"diff\":" + difficulty + "}");
                 broadcast(rosterMsg(), null);
                 return;

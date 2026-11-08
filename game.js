@@ -5,11 +5,13 @@
   var MAP = window.MAP, WP = MAP.weapons;
   var glc = $('gl'), fxc = $('fx'), fx = fxc.getContext('2d');
   var isTouch = window.matchMedia && matchMedia('(pointer:coarse)').matches;
-  var gl = glc.getContext('webgl', { antialias: !isTouch, alpha: false, powerPreference: 'high-performance' }) || glc.getContext('experimental-webgl');
+  var gl = glc.getContext('webgl', { antialias: !isTouch, alpha: true, powerPreference: 'high-performance' }) || glc.getContext('experimental-webgl');
   if (isTouch) document.body.classList.add('touch');
 
   var BODY = [[0.46, 0.5, 0.56], [0.55, 0.42, 0.4], [0.42, 0.52, 0.45], [0.5, 0.47, 0.38], [0.45, 0.43, 0.56], [0.55, 0.5, 0.45], [0.38, 0.5, 0.54], [0.54, 0.42, 0.5]];
-  var FOG = [0.55, 0.76, 0.95];
+  var FOG = MAP.sky || [0.55, 0.76, 0.95];
+  var MMC = MAP.id === 'kota' ? [0.6, 0.82, 0.48] : (MAP.ground || [0.4, 0.72, 0.28]).map(function (v) { return Math.min(1, v * 0.8 + 0.2); });
+  var MMCSS = 'rgb(' + MMC.map(function (v) { return Math.round(v * 255); }).join(',') + ')';
   var EYE = 1.55, EYE_ST = [1.55, 1.05, 0.5], SPD_ST = [1, 0.55, 0.3], SLOT_NAMES = ['Utama', 'Sekunder', 'Jarak dekat'], DIFF = ['Mudah', 'Sedang', 'Sulit'];
 
   // ================= matematika =================
@@ -81,7 +83,7 @@
   function xf(m, p) { return [m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13], m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14]]; }
 
   // ================= aset 3D (dari models3d.js dan mapdata.js) =================
-  var A3D = window.A3D, A3DMAP = window.A3DMAP;
+  var A3D = window.A3D, A3DMAP = (window.A3DMAPS && window.A3DMAPS[MAP.id]) || window.A3DMAP;
   function b64(s, T) {
     var bin = atob(s), n = bin.length, u = new Uint8Array(n);
     for (var i = 0; i < n; i++) u[i] = bin.charCodeAt(i);
@@ -176,7 +178,7 @@
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 
     // tanah dasar (hijau, di bawah mesh peta)
-    var ga = [], g = [0.4, 0.72, 0.28];
+    var ga = [], g = MAP.ground || [0.4, 0.72, 0.28];
     var B = MAP.bounds, ex = 300;
     V(ga, -ex, -0.03, -ex, 0, 1, 0, g, 0); V(ga, -ex, -0.03, ex, 0, 1, 0, g, 0); V(ga, ex, -0.03, ex, 0, 1, 0, g, 0);
     V(ga, -ex, -0.03, -ex, 0, 1, 0, g, 0); V(ga, ex, -0.03, ex, 0, 1, 0, g, 0); V(ga, ex, -0.03, -ex, 0, 1, 0, g, 0);
@@ -450,6 +452,7 @@
     var now = performance.now(), i;
     switch (m.t) {
       case 'welcome':
+        if (m.map && m.map !== MAP.id && window.MAPS && window.MAPS[m.map]) { location.replace(location.pathname + '?map=' + m.map); return; }
         S.id = m.id; S.killLimit = m.killLimit; S.matchOver = m.matchOver; S.bots = m.bots || 0; S.diff = m.diff || 0;
         S.playing = true; document.body.classList.add('playing');
         show('menu', false); $('hud').classList.remove('hide');
@@ -555,16 +558,23 @@
   }
   var PAPAN = $('papanImg') ? $('papanImg').src : '';
   function updateScoreboard() {
-    var rs = rows(), list = sbFull ? rs : rs.slice(0, 6), hr = [];
-    list.forEach(function (r, i) {
-      hr.push('<div class="r' + (r.me ? ' me' : '') + '"><span class="p">' + (i + 1) + '</span><span class="n">' + esc(r.name) + (r.bot ? '<span class="bt">BOT</span>' : '') + '</span><span class="k">' + r.k + '</span>' +
-        (sbFull ? '<span class="d">' + r.d + '</span>' : '') + '</div>');
-    });
-    if (!sbFull && rs.length > 6) {
-      var mine = rs.findIndex(function (r) { return r.me; });
-      if (mine >= 6) hr[5] = '<div class="r me"><span class="p">' + (mine + 1) + '</span><span class="n">' + esc(rs[mine].name) + '</span><span class="k">' + rs[mine].k + '</span></div>';
+    var rs = rows(), hr = [], i;
+    if (sbFull) {
+      rs.forEach(function (r, i) {
+        hr.push('<div class="r' + (r.me ? ' me' : '') + '"><span class="p">' + (i + 1) + '</span><span class="n">' + esc(r.name) + (r.bot ? '<span class="tg">BOT</span>' : '') + '</span><span class="k">' + r.k + '</span><span class="d">' + r.d + '</span></div>');
+      });
+      hr.unshift('<div class="tl">Target ' + S.killLimit + ' kill</div>');
+    } else {
+      var pick = rs.slice(0, 3), mine = rs.findIndex(function (r) { return r.me; });
+      var idx = [0, 1, 2].filter(function (k) { return k < rs.length; });
+      if (mine >= 3) idx[2] = mine;
+      idx.forEach(function (k) {
+        var r = rs[k];
+        hr.push('<div class="r' + (r.me ? ' me' : '') + '"><span class="p">' + (k + 1) + '</span><span class="n">' + esc(r.name) + '</span><span class="k">' + r.k + '</span></div>');
+      });
+      for (i = idx.length; i < 3; i++) hr.push('<div class="r e"></div>');
     }
-    var h = '<div class="hd"><img src="' + PAPAN + '" alt="Papan score">' + (sbFull ? '<span class="tl">Target ' + S.killLimit + '</span>' : '') + '</div>' + hr.join('');
+    var h = hr.join('');
     var key = (sbFull ? 'F' : 'S') + h;
     sb.className = sbFull ? 'full' : '';
     if (key !== lastSb) { lastSb = key; sb.innerHTML = h; }
@@ -730,7 +740,7 @@
   var vmMuz = [0.17, -0.15, -0.9];
   function render(now) {
     gl.viewport(0, 0, glc.width, glc.height);
-    gl.clearColor(FOG[0], FOG[1], FOG[2], 1);
+    if (S.playing) gl.clearColor(FOG[0], FOG[1], FOG[2], 1); else gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     var aspect = W / H, fov = aspect < 1.1 ? 1.55 : 1.22;
     var ex, ey, ez, tx, ty, tz;
@@ -755,8 +765,10 @@
     gl.uniform3f(loc.light, 0.45, 0.82, 0.35);
     gl.uniformMatrix4fv(loc.vp, false, new Float32Array(VP));
     setModel(IDENT);
-    gl.bindBuffer(gl.ARRAY_BUFFER, groundBuf); bindVB(groundBuf); gl.bindTexture(gl.TEXTURE_2D, whiteTex); gl.drawArrays(gl.TRIANGLES, 0, groundCount);
-    for (var mi = 0; mi < mapParts.length; mi++) drawIdx(mapParts[mi]);
+    if (S.playing) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, groundBuf); bindVB(groundBuf); gl.bindTexture(gl.TEXTURE_2D, whiteTex); gl.drawArrays(gl.TRIANGLES, 0, groundCount);
+      for (var mi = 0; mi < mapParts.length; mi++) drawIdx(mapParts[mi]);
+    }
     if (!S.playing) {
       var lp = { x: LOBBY.x, y: 0, z: LOBBY.z, yaw: LOBBY.yaw + (LOBBY.twist !== undefined ? LOBBY.twist : Math.sin(now * 0.0009) * 0.35), pitch: 0, mv: false };
       lobbyChar.w = LOBBY.w !== undefined ? LOBBY.w : pick[0];
@@ -826,13 +838,49 @@
   var mmLayer = null, MMK = 2.4;
   function buildMinimap() {
     var BD = MAP.bounds, w = BD[1] - BD[0], h = BD[3] - BD[2];
-    mmLayer = document.createElement('canvas'); mmLayer.width = Math.round(w * MMK); mmLayer.height = Math.round(h * MMK);
+    var k = Math.min(MMK, 1024 / Math.max(w, h));
+    var tw = Math.round(w * k), th = Math.round(h * k);
+    mmLayer = document.createElement('canvas'); mmLayer.width = tw; mmLayer.height = th;
     var c = mmLayer.getContext('2d');
-    c.fillStyle = '#525252'; c.fillRect(0, 0, mmLayer.width, mmLayer.height);
-    c.fillStyle = '#6f7f63';
+    c.fillStyle = MMCSS; c.fillRect(0, 0, tw, th);
+    try {
+      var fbo = gl.createFramebuffer(), tex = gl.createTexture(), rb = gl.createRenderbuffer();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, tw, th, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.bindRenderbuffer(gl.RENDERBUFFER, rb); gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, tw, th);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rb);
+      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('fbo');
+      gl.viewport(0, 0, tw, th);
+      gl.clearColor(MMC[0], MMC[1], MMC[2], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      var cx = (BD[0] + BD[1]) / 2, cz = (BD[2] + BD[3]) / 2, ax = 2 / w, az = 2 / h, ay = -1 / 32.5;
+      var O = [ax, 0, 0, 0, 0, 0, ay, 0, 0, az, 0, 0, -ax * cx, -az * cz, 27.5 / 32.5, 1];
+      gl.useProgram(prog);
+      gl.uniform3f(loc.light, 0.45, 0.82, 0.35);
+      gl.uniformMatrix4fv(loc.vp, false, new Float32Array(O));
+      setModel(IDENT);
+      gl.bindBuffer(gl.ARRAY_BUFFER, groundBuf); bindVB(groundBuf); gl.bindTexture(gl.TEXTURE_2D, whiteTex); gl.drawArrays(gl.TRIANGLES, 0, groundCount);
+      for (var mi = 0; mi < mapParts.length; mi++) drawIdx(mapParts[mi]);
+      var px = new Uint8Array(tw * th * 4);
+      gl.readPixels(0, 0, tw, th, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      for (var pi = 0; pi < px.length; pi += 4) {
+        var pr = px[pi], pg = px[pi + 1], pb = px[pi + 2], mx2 = Math.max(pr, pg, pb), mn2 = Math.min(pr, pg, pb);
+        if (MAP.id === 'kota' && mx2 - mn2 < 20 && mx2 > 70) { var l = (pr + pg + pb) / 3; px[pi] = Math.min(255, l * 1.2 + 6); px[pi + 1] = l * 0.72; px[pi + 2] = l * 0.55; }
+      }
+      var img = c.createImageData(tw, th); img.data.set(px); c.putImageData(img, 0, 0);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteFramebuffer(fbo); gl.deleteTexture(tex); gl.deleteRenderbuffer(rb);
+      return;
+    } catch (e) {
+      try { gl.bindFramebuffer(gl.FRAMEBUFFER, null); } catch (e2) { }
+    }
+    c.fillStyle = MMCSS; c.fillRect(0, 0, tw, th);
     MAP.boxes.forEach(function (b) {
       if (b[4] - b[1] < 1.2 || b[1] > 1) return;
-      c.fillRect((b[0] - BD[0]) * MMK, (b[2] - BD[2]) * MMK, Math.max(1, (b[3] - b[0]) * MMK), Math.max(1, (b[5] - b[2]) * MMK));
+      c.fillStyle = (b[4] - b[1] > 3) ? '#d9a05f' : '#5fae52';
+      c.fillRect((b[0] - BD[0]) * k, (b[2] - BD[2]) * k, Math.max(1, (b[3] - b[0]) * k), Math.max(1, (b[5] - b[2]) * k));
     });
   }
   function rrect(c, x, y, w, h, r) {
@@ -842,14 +890,14 @@
   function drawMinimap(now) {
     var u = H / 896, bx = 0, by = 8.6 * u, bw = 312 * u, bh = 226 * u, cx = bx + bw / 2, cy = by + bh / 2, range = 34, sc = (bh / 2) / range * 1.0;
     fx.save();
-    rrect(fx, bx, by, bw, bh, 30 * u); fx.clip();
-    fx.fillStyle = '#525252'; fx.fillRect(bx, by, bw, bh);
+    rrect(fx, bx, by, bw, bh, 16 * u); fx.clip();
+    fx.fillStyle = MMCSS; fx.fillRect(bx, by, bw, bh);
     var cs = Math.cos(S.yaw), sn = Math.sin(S.yaw);
     fx.save();
     fx.translate(cx, cy);
     fx.transform(sc * cs, sc * sn, -sc * sn, sc * cs, 0, 0);
     fx.translate(-S.x, -S.z);
-    fx.globalAlpha = 0.95;
+    fx.globalAlpha = 1;
     fx.drawImage(mmLayer, MAP.bounds[0], MAP.bounds[2], MAP.bounds[1] - MAP.bounds[0], MAP.bounds[3] - MAP.bounds[2]);
     fx.restore();
     for (var id in remotes) {

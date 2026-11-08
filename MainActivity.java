@@ -100,14 +100,17 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String startHost(String cfg) {
             try {
-                int bots = 0, diff = 1, kills = 15;
+                int bots = 0, diff = 1, kills = 15, mapIdx = 0;
                 java.util.Map<String, Object> c = Json.parseObject(cfg == null ? "{}" : cfg);
                 if (c != null) {
                     bots = clampInt(c.get("bots"), 0, 8, 0);
                     diff = clampInt(c.get("diff"), 0, 2, 1);
                     kills = clampInt(c.get("kills"), 5, 50, 15);
+                    Object mo = c.get("map");
+                    if (mo != null) for (int i = 0; i < GameMap.IDS.length; i++) if (GameMap.IDS[i].equals(String.valueOf(mo))) mapIdx = i;
                 }
                 if (server != null) { server.stop(); server = null; }
+                GameMap.use(mapIdx);
                 server = new GameServer(new GameServer.Assets() {
                     @Override public byte[] get(String name) throws IOException { return readAsset("public/" + name); }
                 }, PORT, kills, bots, diff);
@@ -124,7 +127,7 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void enterHost() { open("http://127.0.0.1:" + PORT + "/"); }
+        public void enterHost() { open("http://127.0.0.1:" + PORT + "/?map=" + GameMap.IDS[Math.max(0, GameMap.curId)]); }
 
         @JavascriptInterface
         public void join(String host) {
