@@ -18,8 +18,9 @@ jobs:
             mv ./*.java app/src/main/java/com/arenafps/
             mv AndroidManifest.xml app/src/main/
             mv launcher.html app/src/main/assets/
-            mv index.html game.js map.js models3d.js mapdata.js app/src/main/assets/public/
-            mv ic_launcher.png app/src/main/res/drawable/
+            mv index.html game.js map.js app/src/main/assets/public/
+            for f in models3d.js mapdata.js; do [ -f $f ] && mv $f app/src/main/assets/public/; done || true
+            if [ -f ic_launcher.png ]; then mv ic_launcher.png app/src/main/res/drawable/; else mv ic_launcher.xml app/src/main/res/drawable/; fi
             mv app-build.gradle app/build.gradle
           fi
 
@@ -41,4 +42,3 @@ jobs:
           name: ArenaFPS-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          
