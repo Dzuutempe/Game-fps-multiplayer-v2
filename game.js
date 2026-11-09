@@ -5,7 +5,7 @@
   var MAP = window.MAP, WP = MAP.weapons;
   var glc = $('gl'), fxc = $('fx'), fx = fxc.getContext('2d');
   var isTouch = window.matchMedia && matchMedia('(pointer:coarse)').matches;
-  var gl = glc.getContext('webgl', { antialias: !isTouch, alpha: true, powerPreference: 'high-performance' }) || glc.getContext('experimental-webgl');
+  var gl = glc.getContext('webgl', { antialias: true, alpha: true, powerPreference: 'high-performance' }) || glc.getContext('experimental-webgl');
   if (isTouch) document.body.classList.add('touch');
 
   var BODY = [[0.46, 0.5, 0.56], [0.55, 0.42, 0.4], [0.42, 0.52, 0.45], [0.5, 0.47, 0.38], [0.45, 0.43, 0.56], [0.55, 0.5, 0.45], [0.38, 0.5, 0.54], [0.54, 0.42, 0.5]];
@@ -225,30 +225,51 @@
   }
 
   // ================= karakter berkerangka (skinning CPU) =================
-  var FACE = [];
+  var FACE = [], FACEB = [], FACEN = [];
+  var SKIN = [0.95, 0.76, 0.6], SKIN2 = [0.95, 0.76, 0.6], WHITE = [0.514, 0.796, 0.655], BLACK = [0.514, 0.796, 0.655], SHOE = [0.16, 0.16, 0.18];
   function setupChar() {
-    var c = A3D.character, d = decodePart(c.part), n = d.n, i;
+    var c = A3D.character, d = decodePart(c.part), nb = d.n, i, k, q;
     NBONE = c.bones.length;
     c.bones.forEach(function (b, k) { BONE[b.n] = k; });
-    // wajah sederhana pada tulang kepala (koordinat ruang-bind, menghadap -z)
-    var fz = -0.1, quads = [
-      [-0.08, 1.545, 0.08, 1.735, fz + 0.004, [0.95, 0.76, 0.6]],
-      [-0.062, 1.655, -0.022, 1.7, fz - 0.002, [1, 1, 1]], [0.022, 1.655, 0.062, 1.7, fz - 0.002, [1, 1, 1]],
-      [-0.05, 1.66, -0.03, 1.69, fz - 0.004, [0.1, 0.1, 0.14]], [0.03, 1.66, 0.05, 1.69, fz - 0.004, [0.1, 0.1, 0.14]],
-      [-0.032, 1.585, 0.032, 1.6, fz - 0.002, [0.45, 0.12, 0.12]],
-      [-0.07, 1.708, -0.016, 1.718, fz - 0.003, [0.25, 0.15, 0.08]], [0.016, 1.708, 0.07, 1.718, fz - 0.003, [0.25, 0.15, 0.08]]
-    ];
-    var nf = quads.length * 4, ibase = n, idx = Array.prototype.slice.call(d.I);
-    FACE = [];
-    quads.forEach(function (q, k) {
-      var x0 = q[0], y0 = q[1], x1 = q[2], y1 = q[3], z = q[4], col = q[5];
-      [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].forEach(function (p) { FACE.push(p[0], p[1], z, col); });
-      var b = ibase + k * 4; idx.push(b, b + 2, b + 1, b, b + 3, b + 2);
-    });
-    var out = new Float32Array((n + nf) * 12);
-    for (i = 0; i < n; i++) { out[i * 12 + 6] = d.uv[i * 2]; out[i * 12 + 7] = d.uv[i * 2 + 1]; out[i * 12 + 11] = 1; }
+    var dom = [];
+    for (i = 0; i < nb; i++) { var bw0 = 0, bi0 = 0; for (k = 0; k < 4; k++) if (d.BW[i * 4 + k] > bw0) { bw0 = d.BW[i * 4 + k]; bi0 = d.BI[i * 4 + k]; } dom.push(c.bones[bi0].n); }
+    // titik-titik: badan asli dulu, lalu pakaian 3D
+    var P = [], NR = [], BI = [], BW = [], COL = [], MAT = [], UV = [], idx = [];
+    for (i = 0; i < nb; i++) {
+      var bx = d.pos[i * 3], by = d.pos[i * 3 + 1], dn = dom[i], col = null;
+      if (dn.indexOf('Head') >= 0) col = SKIN;                                            // kepala: tekstur dude asli
+      else if (/Hand|ForeArm|Thumb|Index/.test(dn)) col = SKIN;
+      else if (/UpLeg|Leg$/.test(dn)) col = by < 0.1 ? SHOE : BLACK;
+      else if (/Foot|Toe/.test(dn)) col = SHOE;
+      else if (/Arm$/.test(dn)) col = Math.abs(bx) > 0.30 ? SKIN : WHITE;
+      else if (dn === 'Hips') col = by > 0.95 ? WHITE : BLACK;
+      else if (/Spine|Shoulder|Neck/.test(dn)) col = by > 1.488 ? SKIN : WHITE;
+      else col = SKIN;
+      P.push(bx, by, d.pos[i * 3 + 2]); NR.push(d.nor[i * 3], d.nor[i * 3 + 1], d.nor[i * 3 + 2]);
+      for (k = 0; k < 4; k++) { BI.push(d.BI[i * 4 + k]); BW.push(d.BW[i * 4 + k]); }
+      COL.push(col ? col[0] : 1, col ? col[1] : 1, col ? col[2] : 1); MAT.push(col === SKIN2 ? 1 : (col ? 0 : 1)); UV.push(d.uv[i * 2], d.uv[i * 2 + 1]);
+    }
+    for (i = 0; i < d.I.length; i++) idx.push(d.I[i]);
+    // --- detail wajah dude asli ---
+    FACE = []; FACEB = []; FACEN = [];
+    var nclo = P.length / 3, nf = 0;
+    function poly(bone, pts, col, nrm) {
+      var base = nclo + nf;
+      pts.forEach(function (p) { FACE.push(p[0], p[1], p[2], col); FACEB.push(bone); FACEN.push(nrm || [0, 0, -1]); });
+      for (var k3 = 1; k3 + 1 < pts.length; k3++) idx.push(base, base + k3, base + k3 + 1);
+      nf += pts.length;
+    }
+    var rect = function (bone, x0, y0, x1, y1, z, col) { poly(bone, [[x0, y0, z], [x1, y0, z], [x1, y1, z], [x0, y1, z]], col); };
+    var H = BONE.Head, S2 = BONE.Spine2, fz = -0.1;
+    rect(H, -0.08, 1.545, 0.08, 1.735, fz + 0.004, SKIN);
+    rect(H, -0.062, 1.655, -0.022, 1.7, fz - 0.002, [1, 1, 1]); rect(H, 0.022, 1.655, 0.062, 1.7, fz - 0.002, [1, 1, 1]);
+    rect(H, -0.05, 1.66, -0.03, 1.69, fz - 0.004, [0.1, 0.1, 0.14]); rect(H, 0.03, 1.66, 0.05, 1.69, fz - 0.004, [0.1, 0.1, 0.14]);
+    rect(H, -0.032, 1.585, 0.032, 1.6, fz - 0.002, [0.45, 0.12, 0.12]);
+    rect(H, -0.07, 1.708, -0.016, 1.718, fz - 0.003, [0.25, 0.15, 0.08]); rect(H, 0.016, 1.708, 0.07, 1.718, fz - 0.003, [0.25, 0.15, 0.08]);
+    var n = nclo, out = new Float32Array((n + nf) * 12);
+    for (i = 0; i < n; i++) { out[i * 12 + 6] = UV[i * 2]; out[i * 12 + 7] = UV[i * 2 + 1]; out[i * 12 + 11] = MAT[i]; }
     for (i = 0; i < nf; i++) out[(n + i) * 12 + 11] = 0;
-    CH = { n: n, nf: nf, pos: d.pos, nor: d.nor, BI: d.BI, BW: d.BW, out: out, bones: c.bones, M: new Float32Array(NBONE * 16), rot: [], head: BONE.Head };
+    CH = { n: n, nf: nf, pos: new Float32Array(P), nor: new Float32Array(NR), BI: new Uint8Array(BI), BW: new Uint8Array(BW), out: out, col: new Float32Array(COL), bones: c.bones, M: new Float32Array(NBONE * 16), rot: [], head: BONE.Head };
     for (i = 0; i < NBONE; i++) CH.rot.push([0, 0, 0]);
     chIbo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, chIbo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
     CH.ni = idx.length; CH.tex = getTex(c.part.tex, A3D.tex);
@@ -295,15 +316,14 @@
       }
       var o = i * 12;
       out[o] = px; out[o + 1] = py; out[o + 2] = pz; out[o + 3] = qx; out[o + 4] = qy; out[o + 5] = qz;
-      out[o + 8] = tint[0]; out[o + 9] = tint[1]; out[o + 10] = tint[2];
+      out[o + 8] = c.col[i * 3]; out[o + 9] = c.col[i * 3 + 1]; out[o + 10] = c.col[i * 3 + 2];
     }
-    var h = c.head * 16;
     for (i = 0; i < c.nf; i++) {
-      var fx0 = FACE[i * 4], fy0 = FACE[i * 4 + 1], fz0 = FACE[i * 4 + 2], fc = FACE[i * 4 + 3], o2 = (n + i) * 12;
+      var fx0 = FACE[i * 4], fy0 = FACE[i * 4 + 1], fz0 = FACE[i * 4 + 2], fc = FACE[i * 4 + 3], o2 = (n + i) * 12, h = FACEB[i] * 16, fn = FACEN[i];
       out[o2] = M[h] * fx0 + M[h + 4] * fy0 + M[h + 8] * fz0 + M[h + 12];
       out[o2 + 1] = M[h + 1] * fx0 + M[h + 5] * fy0 + M[h + 9] * fz0 + M[h + 13];
       out[o2 + 2] = M[h + 2] * fx0 + M[h + 6] * fy0 + M[h + 10] * fz0 + M[h + 14];
-      out[o2 + 3] = -M[h + 2]; out[o2 + 4] = -M[h + 6]; out[o2 + 5] = -M[h + 10];
+      out[o2 + 3] = M[h] * fn[0] + M[h + 4] * fn[1] + M[h + 8] * fn[2]; out[o2 + 4] = M[h + 1] * fn[0] + M[h + 5] * fn[1] + M[h + 9] * fn[2]; out[o2 + 5] = M[h + 2] * fn[0] + M[h + 6] * fn[1] + M[h + 10] * fn[2];
       out[o2 + 8] = fc[0]; out[o2 + 9] = fc[1]; out[o2 + 10] = fc[2];
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, chBuf);
@@ -701,7 +721,7 @@
   // ================= render =================
   function resize() {
     rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 11;
-    DPR = Math.min(window.devicePixelRatio || 1, isTouch ? 1.5 : 2);
+    DPR = Math.min(window.devicePixelRatio || 1, isTouch ? 2.25 : 2.5);
     W = window.innerWidth; H = window.innerHeight;
     glc.width = fxc.width = Math.round(W * DPR); glc.height = fxc.height = Math.round(H * DPR);
     fx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -912,6 +932,11 @@
     }
     var a = 9 * u;
     fx.fillStyle = '#fff'; fx.beginPath(); fx.moveTo(cx, cy - a * 1.3); fx.lineTo(cx + a, cy + a); fx.lineTo(cx, cy + a * 0.45); fx.lineTo(cx - a, cy + a); fx.closePath(); fx.fill();
+    fx.restore();
+    // bingkai & kilau minimap (posisi tetap)
+    fx.save(); rrect(fx, bx, by, bw, bh, 16 * u);
+    fx.lineWidth = 2 * u; fx.strokeStyle = 'rgba(255,255,255,.55)'; fx.stroke();
+    fx.lineWidth = 1 * u; fx.strokeStyle = 'rgba(0,0,0,.35)'; rrect(fx, bx + 2 * u, by + 2 * u, bw - 4 * u, bh - 4 * u, 14 * u); fx.stroke();
     fx.restore();
   }
 
