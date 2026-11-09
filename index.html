@@ -190,17 +190,45 @@
   #stickB{background:radial-gradient(circle,rgba(255,255,255,.07),rgba(0,0,0,.32) 72%);box-shadow:inset 0 0 0 calc(var(--u)*3) rgba(255,255,255,.3),0 calc(var(--u)*4) calc(var(--u)*14) rgba(0,0,0,.3)}
   #stickK{background:radial-gradient(circle at 50% 35%,rgba(255,255,255,.55),rgba(255,255,255,.22));box-shadow:inset 0 0 0 calc(var(--u)*3) rgba(255,255,255,.7),0 calc(var(--u)*4) calc(var(--u)*10) rgba(0,0,0,.35)}
   /* ---------- pengaturan grafik ---------- */
-  #mGfx{position:absolute;border:0;padding:0;cursor:pointer;left:calc(calc(var(--u)*24) + var(--safeL));bottom:calc(var(--u)*17.25);top:auto;width:calc(var(--u)*80);height:calc(var(--u)*80);border-radius:calc(var(--u)*22);background:#06cef7;box-shadow:0 calc(var(--u)*6) 0 #028dca;display:flex;align-items:center;justify-content:center}
+  #mGfx{position:absolute;border:0;padding:0;cursor:pointer;left:calc(calc(var(--u)*24) + var(--safeL));bottom:calc(var(--u)*32);top:auto;width:calc(var(--u)*80);height:calc(var(--u)*80);border-radius:calc(var(--u)*22);background:#06cef7;box-shadow:0 calc(var(--u)*6) 0 #028dca;display:flex;align-items:center;justify-content:center}
   #mGfx:active{filter:brightness(.9);transform:translateY(2px)}
   #mGfx svg{width:62%;height:62%;fill:#fff;filter:drop-shadow(0 calc(var(--u)*3) 0 rgba(0,0,0,.2))}
-  #gpanel{background:rgba(20,20,20,.62);align-items:center;justify-content:center;z-index:40}
-  #gpanel .card{min-width:min(86vw,32rem)}
-  #gpanel .row{margin:.55rem 0}
-  #gpanel .row>span{display:block;font-weight:800;text-transform:uppercase;font-size:.85rem;color:#d8d8d8;margin-bottom:.3rem;font-family:ArenaU,var(--sans)}
-  #gpanel .chips{display:flex;gap:.4rem;flex-wrap:wrap}
-  #gpanel .chips .cb{height:2.3rem;padding:0 .9rem;font-size:.95rem;background:var(--gray)}
-  #gpanel .chips .cb.on{background:var(--red)}
-  #gpanel .note{font-size:.75rem;color:#bbb;margin:.2rem 0 0;font-weight:700;font-style:normal}
+
+  /* ---------- jendela (gaya lobi: tombol tebal, pil berwarna) ---------- */
+  #wpanel,#hpanel,#gpanel{background:radial-gradient(ellipse at center,rgba(20,20,20,.55),rgba(0,0,0,.78));align-items:center;justify-content:center;z-index:40}
+  .card{background:linear-gradient(#7b7b7b,#666);border-radius:calc(var(--u)*47);padding:calc(var(--u)*30) calc(var(--u)*40) calc(var(--u)*38);box-shadow:0 calc(var(--u)*10) 0 rgba(0,0,0,.38),inset 0 calc(var(--u)*4) 0 rgba(255,255,255,.14),0 0 0 calc(var(--u)*4) rgba(0,0,0,.2)}
+  .card h2.ttl{display:inline-block;margin:0 0 calc(var(--u)*22);padding:calc(var(--u)*10) calc(var(--u)*34);font-size:calc(var(--u)*44);border-radius:calc(var(--u)*32);background:#06cef7;box-shadow:0 calc(var(--u)*6) 0 #028dca;text-shadow:0 calc(var(--u)*3) 0 rgba(0,0,0,.22)}
+  .col h3{display:block;text-align:center;margin:0 0 calc(var(--u)*16);padding:calc(var(--u)*10) calc(var(--u)*8);border-radius:calc(var(--u)*26);font-size:calc(var(--u)*26);letter-spacing:.08em;color:#fff;text-shadow:0 calc(var(--u)*3) 0 rgba(0,0,0,.22)}
+  .col:nth-child(1) h3{background:#9ee25d;box-shadow:0 calc(var(--u)*6) 0 #6fb23a}
+  .col:nth-child(2) h3{background:#eaf26d;box-shadow:0 calc(var(--u)*6) 0 #b8c43e}
+  .col:nth-child(3) h3{background:#06cef7;box-shadow:0 calc(var(--u)*6) 0 #028dca}
+  .row{padding:calc(var(--u)*14) calc(var(--u)*22);margin-bottom:calc(var(--u)*18);border-radius:calc(var(--u)*28);background:linear-gradient(#848484,#6f6f6f);box-shadow:0 calc(var(--u)*6) 0 rgba(0,0,0,.32),inset 0 calc(var(--u)*3) 0 rgba(255,255,255,.12)}
+  .row:active{transform:translateY(2px);box-shadow:0 calc(var(--u)*3) 0 rgba(0,0,0,.32)}
+  .row.on{background:linear-gradient(#25d9fb,#06cef7);box-shadow:0 calc(var(--u)*6) 0 #028dca,inset 0 calc(var(--u)*3) 0 rgba(255,255,255,.3)}
+  .row b{text-shadow:0 calc(var(--u)*2) 0 rgba(0,0,0,.2)}
+  .card .bar{margin-top:calc(var(--u)*24)}
+  .card .bar .cb{height:calc(var(--u)*84);padding:0 calc(var(--u)*48);font-size:calc(var(--u)*34);border-radius:calc(var(--u)*30);background:#06cef7;box-shadow:0 calc(var(--u)*7) 0 #028dca;text-shadow:0 calc(var(--u)*3) 0 rgba(0,0,0,.22)}
+  .card .bar .cb:active{transform:translateY(3px);box-shadow:0 calc(var(--u)*3) 0 #028dca;filter:none}
+  #wpanel .card{position:relative}
+  #wpanel .bar{position:absolute;top:calc(var(--u)*26);right:calc(var(--u)*40);margin:0}
+  #wpanel .bar .cb{height:calc(var(--u)*76);font-size:calc(var(--u)*32)}
+  /* grafik */
+  #gpanel .card{width:min(46rem,92vw)}
+  .grow{margin:0 0 calc(var(--u)*18);padding:calc(var(--u)*16) calc(var(--u)*22) calc(var(--u)*20);border-radius:calc(var(--u)*32);background:rgba(0,0,0,.17);box-shadow:inset 0 calc(var(--u)*4) 0 rgba(0,0,0,.12)}
+  .grow>span{display:block;margin-bottom:calc(var(--u)*12);font-family:ArenaU,var(--sans);font-weight:800;font-size:calc(var(--u)*24);letter-spacing:.1em;text-transform:uppercase;color:#e8e8e8}
+  .chips{display:flex;gap:calc(var(--u)*12);flex-wrap:wrap}
+  .chips .cb{flex:1 1 0;min-width:calc(var(--u)*120);height:calc(var(--u)*74);padding:0 calc(var(--u)*14);font-size:calc(var(--u)*30);border-radius:calc(var(--u)*26);background:linear-gradient(#848484,#6f6f6f);box-shadow:0 calc(var(--u)*6) 0 rgba(0,0,0,.32),inset 0 calc(var(--u)*3) 0 rgba(255,255,255,.12);text-shadow:0 calc(var(--u)*2) 0 rgba(0,0,0,.2)}
+  .chips .cb:active{transform:translateY(2px);box-shadow:0 calc(var(--u)*3) 0 rgba(0,0,0,.32);filter:none}
+  .chips .cb.on{background:linear-gradient(#25d9fb,#06cef7);box-shadow:0 calc(var(--u)*6) 0 #028dca,inset 0 calc(var(--u)*3) 0 rgba(255,255,255,.3)}
+  .grow .note{margin:calc(var(--u)*12) 0 0;font-family:ArenaU,var(--sans);font-style:normal;font-weight:800;font-size:calc(var(--u)*22);color:#d2d2d2}
+  /* tampilan mati */
+  #dead{background:radial-gradient(ellipse at center,rgba(0,0,0,.55),rgba(0,0,0,.88));align-items:center;justify-content:center}
+  #dcard{display:flex;flex-direction:column;align-items:center;gap:calc(var(--u)*18);padding:calc(var(--u)*34) calc(var(--u)*64) calc(var(--u)*40);border-radius:calc(var(--u)*47);background:linear-gradient(#7b7b7b,#666);box-shadow:0 calc(var(--u)*10) 0 rgba(0,0,0,.4),inset 0 calc(var(--u)*4) 0 rgba(255,255,255,.14),0 0 0 calc(var(--u)*4) rgba(0,0,0,.2);text-align:center;max-width:94vw}
+  #dwho{margin:0;padding:calc(var(--u)*12) calc(var(--u)*44);font-size:calc(var(--u)*56);border-radius:calc(var(--u)*36);background:var(--red);box-shadow:0 calc(var(--u)*7) 0 #c93d43;text-shadow:0 calc(var(--u)*4) 0 rgba(0,0,0,.25);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #dsub{margin:0;padding:calc(var(--u)*10) calc(var(--u)*34);font-size:calc(var(--u)*30);border-radius:calc(var(--u)*28);background:rgba(0,0,0,.22);box-shadow:inset 0 calc(var(--u)*4) 0 rgba(0,0,0,.15);text-shadow:none;letter-spacing:.04em}
+  #dchange{height:calc(var(--u)*92);padding:0 calc(var(--u)*56);font-size:calc(var(--u)*38);margin:calc(var(--u)*6) 0 0;border-radius:calc(var(--u)*32)}
+  .cb.grn2{background:#9ee25d;box-shadow:0 calc(var(--u)*7) 0 #6fb23a;text-shadow:0 calc(var(--u)*3) 0 rgba(0,0,0,.22)}
+  .cb.grn2:active{transform:translateY(3px);box-shadow:0 calc(var(--u)*3) 0 #6fb23a;filter:none}
 </style>
 </head>
 <body>
@@ -260,9 +288,9 @@
 <!-- PANEL GRAFIK -->
 <div class="ov" id="gpanel"><div class="card">
   <h2 class="ttl">Pengaturan grafik</h2>
-  <div class="row"><span>Kualitas grafik</span><div class="chips" id="gQ"><button class="cb" data-v="0">Rendah</button><button class="cb" data-v="1">Sedang</button><button class="cb" data-v="2">Tinggi</button><button class="cb" data-v="3">Ultra</button></div></div>
-  <div class="row"><span>Resolusi</span><div class="chips" id="gR"><button class="cb" data-v="0.5">50%</button><button class="cb" data-v="0.75">75%</button><button class="cb" data-v="1">100%</button><button class="cb" data-v="1.25">125%</button></div><p class="note" id="gRn"></p></div>
-  <div class="row"><span>Anti-alias (tepi halus)</span><div class="chips" id="gA"><button class="cb" data-v="0">Mati</button><button class="cb" data-v="1">Nyala</button></div><p class="note">Anti-alias berlaku setelah game dibuka ulang.</p></div>
+  <div class="grow"><span>Kualitas grafik</span><div class="chips" id="gQ"><button class="cb" data-v="0">Rendah</button><button class="cb" data-v="1">Sedang</button><button class="cb" data-v="2">Tinggi</button><button class="cb" data-v="3">Ultra</button></div></div>
+  <div class="grow"><span>Resolusi</span><div class="chips" id="gR"><button class="cb" data-v="0.5">50%</button><button class="cb" data-v="0.75">75%</button><button class="cb" data-v="1">100%</button><button class="cb" data-v="1.25">125%</button></div><p class="note" id="gRn"></p></div>
+  <div class="grow"><span>Anti-alias (tepi halus)</span><div class="chips" id="gA"><button class="cb" data-v="0">Mati</button><button class="cb" data-v="1">Nyala</button></div><p class="note">Anti-alias berlaku setelah game dibuka ulang.</p></div>
   <div class="bar"><button class="cb red" id="gOk">Selesai</button></div>
 </div></div>
 
@@ -275,7 +303,7 @@
 </div></div>
 
 <div class="ov" id="pause"><div class="center ov show" style="position:absolute"><p class="big">Jeda</p><p class="sm">Klik di mana saja untuk lanjut</p></div></div>
-<div class="ov" id="dead"><div id="dwho" class="ttl"></div><div id="dsub"></div><button class="cb red" id="dchange">Ganti senjata</button></div>
+<div class="ov" id="dead"><div id="dcard"><div id="dwho" class="ttl"></div><div id="dsub"></div><button class="cb grn2" id="dchange">Ganti senjata</button></div></div>
 <div class="ov" id="win"><div class="box"><h2 id="wtitle" class="ttl"></h2><p id="wsub"></p><div id="wtab"></div></div></div>
 <div class="ov center" id="disc"><p class="big">Koneksi terputus</p><p class="sm">Pastikan masih di WiFi yang sama dan host masih menjalankan server.</p><button class="cb red" style="height:2.6rem" onclick="location.reload()">Muat ulang</button></div>
 

@@ -5,7 +5,7 @@
   var MAP = window.MAP, WP = MAP.weapons;
   var glc = $('gl'), fxc = $('fx'), fx = fxc.getContext('2d');
   var isTouch = window.matchMedia && matchMedia('(pointer:coarse)').matches;
-  var G = { q: 2, res: 1, aa: true };
+  var G = { q: 1, res: 0.8, aa: false };
   try { var gs = JSON.parse(localStorage.getItem('arena_gfx') || 'null'); if (gs) { G.q = gs.q | 0; G.res = +gs.res || 1; G.aa = gs.aa !== false; } } catch (e) { /* abaikan */ }
   var gl = glc.getContext('webgl', { antialias: G.aa, alpha: true, powerPreference: 'high-performance' }) || glc.getContext('experimental-webgl');
   if (isTouch) document.body.classList.add('touch');
@@ -252,6 +252,7 @@
       COL.push(col ? col[0] : 1, col ? col[1] : 1, col ? col[2] : 1); MAT.push(col === SKIN2 ? 1 : (col ? 0 : 1)); UV.push(d.uv[i * 2], d.uv[i * 2 + 1]);
     }
     // tiap segitiga satu warna rata (tanpa gradasi): titik digandakan per segitiga, warna = suara terbanyak
+    var dupMap = {};
     for (i = 0; i < d.I.length; i += 3) {
       var tv = [d.I[i], d.I[i + 1], d.I[i + 2]], cx = 0, cy = 0, pc, dn2 = null, anyHead = false;
       tv.forEach(function (v) { cx += d.pos[v * 3] / 3; cy += d.pos[v * 3 + 1] / 3; if (/Head/.test(dom[v])) anyHead = true; else if (!dn2) dn2 = dom[v]; });
@@ -264,8 +265,11 @@
       else if (dn2 === 'Hips' || (/^Spine$/.test(dn2) && cy < 1.0)) pc = cy > 0.98 ? SHIRT : PANTS;
       else if (/Spine|Shoulder|Neck/.test(dn2)) pc = (cy > 1.488 && Math.abs(cx) < 0.075) ? SKIN : SHIRT;
       else pc = SKIN;
+      var cid = pc === SKIN ? 0 : pc === SHIRT ? 1 : pc === PANTS ? 2 : 3;
       tv.forEach(function (v) {
-        var id = P.length / 3; P.push(P[v * 3], P[v * 3 + 1], P[v * 3 + 2]); NR.push(NR[v * 3], NR[v * 3 + 1], NR[v * 3 + 2]);
+        var dk = v * 4 + cid;
+        if (dupMap[dk] !== undefined) { idx.push(dupMap[dk]); return; }
+        var id = P.length / 3; dupMap[dk] = id; P.push(P[v * 3], P[v * 3 + 1], P[v * 3 + 2]); NR.push(NR[v * 3], NR[v * 3 + 1], NR[v * 3 + 2]);
         for (var k2 = 0; k2 < 4; k2++) { BI.push(BI[v * 4 + k2]); BW.push(BW[v * 4 + k2]); }
         var vy = P[v * 3 + 1], g = 1;
         if (pc === SHIRT) g = 0.74 + 0.4 * Math.min(1, Math.max(0, (vy - 0.98) / 0.52));
@@ -763,7 +767,7 @@
   // ================= render =================
   function resize() {
     rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 11;
-    DPR = Math.min(window.devicePixelRatio || 1, isTouch ? 2.25 : 2.5);
+    DPR = Math.min(window.devicePixelRatio || 1, isTouch ? 1.5 : 2);
     W = window.innerWidth; H = window.innerHeight;
     var gd = Math.max(0.5, Math.min((window.devicePixelRatio || 1) * G.res, G.res > 1 ? 3 : (isTouch ? 2.25 : 2.5)));
     fxc.width = Math.round(W * DPR); fxc.height = Math.round(H * DPR);
