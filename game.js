@@ -5,7 +5,9 @@
   var MAP = window.MAP, WP = MAP.weapons;
   var glc = $('gl'), fxc = $('fx'), fx = fxc.getContext('2d');
   var isTouch = window.matchMedia && matchMedia('(pointer:coarse)').matches;
-  var gl = glc.getContext('webgl', { antialias: true, alpha: true, powerPreference: 'high-performance' }) || glc.getContext('experimental-webgl');
+  var G = { q: 2, res: 1, aa: true };
+  try { var gs = JSON.parse(localStorage.getItem('arena_gfx') || 'null'); if (gs) { G.q = gs.q | 0; G.res = +gs.res || 1; G.aa = gs.aa !== false; } } catch (e) { /* abaikan */ }
+  var gl = glc.getContext('webgl', { antialias: G.aa, alpha: true, powerPreference: 'high-performance' }) || glc.getContext('experimental-webgl');
   if (isTouch) document.body.classList.add('touch');
 
   var BODY = [[0.46, 0.5, 0.56], [0.55, 0.42, 0.4], [0.42, 0.52, 0.45], [0.5, 0.47, 0.38], [0.45, 0.43, 0.56], [0.55, 0.5, 0.45], [0.38, 0.5, 0.54], [0.54, 0.42, 0.5]];
@@ -226,7 +228,7 @@
 
   // ================= karakter berkerangka (skinning CPU) =================
   var FACE = [], FACEB = [], FACEN = [];
-  var SKIN = [0.95, 0.76, 0.6], SKIN2 = [0.95, 0.76, 0.6], WHITE = [0.514, 0.796, 0.655], BLACK = [0.514, 0.796, 0.655], SHOE = [0.16, 0.16, 0.18];
+  var SKIN = [0.95, 0.76, 0.6], SKIN2 = [0.95, 0.76, 0.6], SHIRT = [0.86, 0.86, 0.88], PANTS = [0.17, 0.27, 0.46], SHOE = [0.16, 0.16, 0.18];
   function setupChar() {
     var c = A3D.character, d = decodePart(c.part), nb = d.n, i, k, q;
     NBONE = c.bones.length;
@@ -239,17 +241,40 @@
       var bx = d.pos[i * 3], by = d.pos[i * 3 + 1], dn = dom[i], col = null;
       if (dn.indexOf('Head') >= 0) col = SKIN;                                            // kepala: tekstur dude asli
       else if (/Hand|ForeArm|Thumb|Index/.test(dn)) col = SKIN;
-      else if (/UpLeg|Leg$/.test(dn)) col = by < 0.1 ? SHOE : BLACK;
+      else if (/UpLeg|Leg$/.test(dn)) col = by < 0.1 ? SHOE : PANTS;
       else if (/Foot|Toe/.test(dn)) col = SHOE;
-      else if (/Arm$/.test(dn)) col = Math.abs(bx) > 0.30 ? SKIN : WHITE;
-      else if (dn === 'Hips') col = by > 0.95 ? WHITE : BLACK;
-      else if (/Spine|Shoulder|Neck/.test(dn)) col = by > 1.488 ? SKIN : WHITE;
+      else if (/Arm$/.test(dn)) col = Math.abs(bx) > 0.30 ? SKIN : SHIRT;
+      else if (dn === 'Hips') col = by > 0.95 ? SHIRT : PANTS;
+      else if (/Spine|Shoulder|Neck/.test(dn)) col = by > 1.488 ? SKIN : SHIRT;
       else col = SKIN;
       P.push(bx, by, d.pos[i * 3 + 2]); NR.push(d.nor[i * 3], d.nor[i * 3 + 1], d.nor[i * 3 + 2]);
       for (k = 0; k < 4; k++) { BI.push(d.BI[i * 4 + k]); BW.push(d.BW[i * 4 + k]); }
       COL.push(col ? col[0] : 1, col ? col[1] : 1, col ? col[2] : 1); MAT.push(col === SKIN2 ? 1 : (col ? 0 : 1)); UV.push(d.uv[i * 2], d.uv[i * 2 + 1]);
     }
-    for (i = 0; i < d.I.length; i++) idx.push(d.I[i]);
+    // tiap segitiga satu warna rata (tanpa gradasi): titik digandakan per segitiga, warna = suara terbanyak
+    for (i = 0; i < d.I.length; i += 3) {
+      var tv = [d.I[i], d.I[i + 1], d.I[i + 2]], cx = 0, cy = 0, pc, dn2 = null, anyHead = false;
+      tv.forEach(function (v) { cx += d.pos[v * 3] / 3; cy += d.pos[v * 3 + 1] / 3; if (/Head/.test(dom[v])) anyHead = true; else if (!dn2) dn2 = dom[v]; });
+      if (anyHead && (cy > 1.5 || !dn2)) dn2 = 'Head'; else if (!dn2) dn2 = 'Head';
+      if (dn2 === 'Head') pc = SKIN;
+      else if (/Hand|ForeArm|Thumb|Index/.test(dn2)) pc = SKIN;
+      else if (/UpLeg|Leg$/.test(dn2)) pc = cy < 0.1 ? SHOE : PANTS;
+      else if (/Foot|Toe/.test(dn2)) pc = SHOE;
+      else if (/Arm$/.test(dn2)) pc = Math.abs(cx) > 0.34 ? SKIN : SHIRT;
+      else if (dn2 === 'Hips' || (/^Spine$/.test(dn2) && cy < 1.0)) pc = cy > 0.98 ? SHIRT : PANTS;
+      else if (/Spine|Shoulder|Neck/.test(dn2)) pc = (cy > 1.488 && Math.abs(cx) < 0.075) ? SKIN : SHIRT;
+      else pc = SKIN;
+      tv.forEach(function (v) {
+        var id = P.length / 3; P.push(P[v * 3], P[v * 3 + 1], P[v * 3 + 2]); NR.push(NR[v * 3], NR[v * 3 + 1], NR[v * 3 + 2]);
+        for (var k2 = 0; k2 < 4; k2++) { BI.push(BI[v * 4 + k2]); BW.push(BW[v * 4 + k2]); }
+        var vy = P[v * 3 + 1], g = 1;
+        if (pc === SHIRT) g = 0.74 + 0.4 * Math.min(1, Math.max(0, (vy - 0.98) / 0.52));
+        else if (pc === PANTS) g = 0.7 + 0.45 * Math.min(1, Math.max(0, (vy - 0.1) / 0.85));
+        else if (pc === SKIN) g = 0.88 + 0.12 * Math.min(1, Math.max(0, (vy - 0.9) / 0.8));
+        else if (pc === SHOE) g = 0.8 + 0.4 * Math.min(1, Math.max(0, vy / 0.1));
+        COL.push(Math.min(1, pc[0] * g), Math.min(1, pc[1] * g), Math.min(1, pc[2] * g)); MAT.push(0); UV.push(0, 0); idx.push(id);
+      });
+    }
     // --- detail wajah dude asli ---
     FACE = []; FACEB = []; FACEN = [];
     var nclo = P.length / 3, nf = 0;
@@ -266,6 +291,18 @@
     rect(H, -0.05, 1.66, -0.03, 1.69, fz - 0.004, [0.1, 0.1, 0.14]); rect(H, 0.03, 1.66, 0.05, 1.69, fz - 0.004, [0.1, 0.1, 0.14]);
     rect(H, -0.032, 1.585, 0.032, 1.6, fz - 0.002, [0.45, 0.12, 0.12]);
     rect(H, -0.07, 1.708, -0.016, 1.718, fz - 0.003, [0.25, 0.15, 0.08]); rect(H, 0.016, 1.708, 0.07, 1.718, fz - 0.003, [0.25, 0.15, 0.08]);
+    function box(bone, x0, y0, z0, x1, y1, z1, col) {
+      poly(bone, [[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0]], col, [0, 0, -1]);
+      poly(bone, [[x1, y0, z1], [x0, y0, z1], [x0, y1, z1], [x1, y1, z1]], col, [0, 0, 1]);
+      poly(bone, [[x0, y0, z1], [x0, y0, z0], [x0, y1, z0], [x0, y1, z1]], col, [-1, 0, 0]);
+      poly(bone, [[x1, y0, z0], [x1, y0, z1], [x1, y1, z1], [x1, y1, z0]], col, [1, 0, 0]);
+      poly(bone, [[x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]], col, [0, 1, 0]);
+      poly(bone, [[x0, y0, z1], [x1, y0, z1], [x1, y0, z0], [x0, y0, z0]], col, [0, -1, 0]);
+    }
+    var CAP = [0.75, 0.12, 0.12];
+    box(H, -0.098, 1.728, -0.108, 0.098, 1.80, 0.108, CAP);
+    box(H, -0.082, 1.80, -0.09, 0.082, 1.82, 0.09, [0.88, 0.2, 0.2]);
+    box(H, -0.085, 1.728, -0.205, 0.085, 1.738, -0.105, [0.55, 0.08, 0.08]);
     var n = nclo, out = new Float32Array((n + nf) * 12);
     for (i = 0; i < n; i++) { out[i * 12 + 6] = UV[i * 2]; out[i * 12 + 7] = UV[i * 2 + 1]; out[i * 12 + 11] = MAT[i]; }
     for (i = 0; i < nf; i++) out[(n + i) * 12 + 11] = 0;
@@ -287,9 +324,14 @@
     var up = pitch * 0.75 - 0.55, chop = 0;
     if (arc >= 0) chop = (1 - 2 * arc) * 1.1 * Math.sin(Math.PI * Math.min(1, arc * 1.05));
     if (melee) up += 0.25;
-    setRot('LeftArm', up + chop, -1.3, 0); setRot('RightArm', up + chop, 1.3, 0);
-    setRot('LeftForeArm', 0, melee ? -0.5 : -0.95, 0); setRot('RightForeArm', 0, melee ? 0.5 : 0.95, 0);
+    setRot('LeftArm', up + chop, melee ? -1.3 : -1.25, 0); setRot('RightArm', up + chop, melee ? 1.3 : 1.12, 0);
+    setRot('LeftForeArm', 0, melee ? -0.5 : -1.0, 0); setRot('RightForeArm', 0, melee ? 0.5 : 0.7, 0);
     setRot('LeftHand', 0, 0, 0.15); setRot('RightHand', 0, 0, -0.15);
+    if (melee) {
+      setRot('RightArm', 0.0 + chop * 0.6, 1.2, -0.3); setRot('RightForeArm', 0, 0.15, 0); setRot('RightHand', 0, 0, 0);
+      setRot('LeftArm', 0, 0, 1.2); setRot('LeftForeArm', 0, -0.35, 0); setRot('LeftHand', 0, 0, 0);
+      setRot('Spine', pitch * 0.12, 0.25 + mv * 0.08 * Math.sin(ph), 0);
+    }
     var M = c.M, tmp, k, b, par, R, p;
     for (k = 0; k < NBONE; k++) {
       b = c.bones[k]; p = b;
@@ -347,7 +389,7 @@
   var recoil = 0, flashT = 0, flashA = 0, hitT = -999, hitKill = false, hitHead = false, muzzleT = 0, bobT = 0;
   var W = 0, H = 0, DPR = 1, VP = null, eyeNow = [0, 0, 0], fovNow = 1.2;
   var menuMode = 'join';   // 'join' | 'change'
-  function menuOpen() { return $('menu').classList.contains('show') || $('wpanel').classList.contains('show') || $('hpanel').classList.contains('show'); }
+  function menuOpen() { return $('menu').classList.contains('show') || $('wpanel').classList.contains('show') || $('hpanel').classList.contains('show') || $('gpanel').classList.contains('show'); }
   var rem = 11;
   var stats = { kills: 0, deaths: 0, wins: 0 };
   try { var st0 = JSON.parse(localStorage.getItem('arena_stats') || 'null'); if (st0) stats = st0; } catch (e) { /* abaikan */ }
@@ -723,7 +765,9 @@
     rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 11;
     DPR = Math.min(window.devicePixelRatio || 1, isTouch ? 2.25 : 2.5);
     W = window.innerWidth; H = window.innerHeight;
-    glc.width = fxc.width = Math.round(W * DPR); glc.height = fxc.height = Math.round(H * DPR);
+    var gd = Math.max(0.5, Math.min((window.devicePixelRatio || 1) * G.res, G.res > 1 ? 3 : (isTouch ? 2.25 : 2.5)));
+    fxc.width = Math.round(W * DPR); fxc.height = Math.round(H * DPR);
+    glc.width = Math.round(W * gd); glc.height = Math.round(H * gd);
     fx.setTransform(DPR, 0, 0, DPR, 0, 0);
     try { if (stickT == null) setStickUI(false); } catch (e) { /* abaikan */ }
   }
@@ -746,8 +790,8 @@
     if (mdl) {
       var len = mdl.size[2], pit = (p.pitch || 0) * 0.95;
       var wm;
-      if (melee) wm = mul(base, mul(mT(0.0, 1.0, -0.38), mul(mRx(0.6), mRy(0))));
-      else wm = mul(base, mul(mT(0, 1.38, 0), mul(mRx(pit), mT(0.03, -0.27, -0.45))));
+      if (melee) wm = mul(base, mul(mT(0.14, 1.2, -0.46), mul(mRx(0.75), mRy(0))));
+      else wm = mul(base, mul(mT(0, 1.38, 0), mul(mRx(pit), mT(0.1, -0.27, -0.45))));
       drawModel(w.key, wm);
       if (!melee && now - r.fl < 60) {
         var fa = [], mz = mdl.muzzle;
@@ -1169,6 +1213,20 @@
   $('th').addEventListener('click', function () { show('hpanel', true); });
   $('mHelp').addEventListener('click', function () { show('hpanel', true); });
   $('hOk').addEventListener('click', function () { show('hpanel', false); });
+  // ---- pengaturan grafik ----
+  var GQ = [{ res: 0.6, aa: 0 }, { res: 0.8, aa: 0 }, { res: 1, aa: 1 }, { res: 1.25, aa: 1 }];
+  function gSave() { try { localStorage.setItem('arena_gfx', JSON.stringify(G)); } catch (e) { /* abaikan */ } }
+  function gMark(id, val) { var b = $(id).children; for (var i = 0; i < b.length; i++) b[i].classList.toggle('on', Math.abs(parseFloat(b[i].getAttribute('data-v')) - val) < 0.001); }
+  function gRefresh() {
+    gMark('gQ', G.q); gMark('gR', G.res); gMark('gA', G.aa ? 1 : 0);
+    $('gRn').textContent = 'Render ' + Math.round(glc.width) + 'x' + Math.round(glc.height) + ' piksel';
+  }
+  $('mGfx').addEventListener('click', function () { gRefresh(); show('gpanel', true); });
+  $('gOk').addEventListener('click', function () { show('gpanel', false); });
+  $('gQ').addEventListener('click', function (e) { var v = e.target.getAttribute && e.target.getAttribute('data-v'); if (v == null) return; G.q = +v; G.res = GQ[G.q].res; G.aa = !!GQ[G.q].aa; gSave(); resize(); gRefresh(); });
+  $('gR').addEventListener('click', function (e) { var v = e.target.getAttribute && e.target.getAttribute('data-v'); if (v == null) return; G.res = +v; gSave(); resize(); gRefresh(); });
+  $('gA').addEventListener('click', function (e) { var v = e.target.getAttribute && e.target.getAttribute('data-v'); if (v == null) return; G.aa = v === '1'; gSave(); gRefresh(); });
+
   $('wOk').addEventListener('click', function () {
     show('wpanel', false);
     if (menuMode === 'change') {
