@@ -22,8 +22,10 @@ final class WeaponDefs {
     static final int[] RELOAD = {2000, 1700, 2300, 2800, 4200, 1300, 2200, 1500, 0, 0, 2200, 2600, 3200, 0};
     static final boolean[] AUTO = {true, true, false, false, true, false, false, true, true, true, true, false, false, true};
     static final double[] SPEED = {0.95, 1, 0.95, 0.85, 0.8, 1, 1, 1, 1.15, 1, 0.93, 0.9, 0.8, 1.05};
-    static final int[] DEFAULT_LO = {0, 5, 8};
+    static final int[] DEFAULT_LO = {0, 10, 7, 8};
+    /** Jenis senjata tiap posisi slot: 2 senjata besar, 1 kecil, 1 jarak dekat. */
+    static final int[] LOSLOT = {0, 0, 1, 2};
 
     /** Apakah id senjata valid untuk slot tertentu. */
-    static boolean validFor(int slot, int w) { return w >= 0 && w < COUNT && SLOT[w] == slot; }
+    static boolean validFor(int pos, int w) { return pos >= 0 && pos < 4 && w >= 0 && w < COUNT && SLOT[w] == LOSLOT[pos]; }
 }

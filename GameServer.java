@@ -350,12 +350,14 @@ public final class GameServer {
         int[] lo = WeaponDefs.DEFAULT_LO.clone();
         int[] nextLo = WeaponDefs.DEFAULT_LO.clone();
         int curW = WeaponDefs.DEFAULT_LO[0];
+        final int[] gren = {2, 1, 1};     // granat: ledak, asap, beku
+        long frozenUntil, lastNade;
         final ArrayList<double[]> hist = new ArrayList<>(); // {t,x,y,z}
 
         // --- khusus bot ---
         int diff;
         int slot;
-        final int[] mag = new int[3];
+        final int[] mag = new int[4];
         long reloadUntil;
         int targetId = -1;
         long lastSeen, reactAt, flipAt, repathAt, stuckAt, headAt;
@@ -419,7 +421,7 @@ public final class GameServer {
         int[] r = fallback.clone();
         if (o instanceof List) {
             List<?> l = (List<?>) o;
-            for (int i = 0; i < 3 && i < l.size(); i++) {
+            for (int i = 0; i < 4 && i < l.size(); i++) {
                 Object e = l.get(i);
                 if (e instanceof Double) {
                     int w = (int) Math.round((Double) e);
@@ -428,6 +430,10 @@ public final class GameServer {
             }
         }
         return r;
+    }
+
+    private static boolean hasW(Player p, int w) {
+        return w == p.lo[0] || w == p.lo[1] || w == p.lo[2] || w == p.lo[3];
     }
 
     private int humans() {
@@ -464,20 +470,23 @@ public final class GameServer {
         if (p.bot) p.nextLo = randomLoadout();
         p.lo = p.nextLo.clone();
         p.curW = p.lo[0];
+        p.gren[0] = 2; p.gren[1] = 1; p.gren[2] = 1; p.frozenUntil = 0;
         if (p.bot) {
             p.slot = 0;
-            for (int i = 0; i < 3; i++) p.mag[i] = WeaponDefs.MAG[p.lo[i]];
+            for (int i = 0; i < 4; i++) p.mag[i] = WeaponDefs.MAG[p.lo[i]];
             p.reloadUntil = 0; p.targetId = -1; p.haveLast = false; p.path = null;
         }
         p.send("{\"t\":\"respawn\",\"x\":" + n(p.x) + ",\"y\":0,\"z\":" + n(p.z) + ",\"yaw\":" + n(p.yaw) +
-                ",\"lo\":[" + p.lo[0] + "," + p.lo[1] + "," + p.lo[2] + "]}");
+                ",\"lo\":[" + p.lo[0] + "," + p.lo[1] + "," + p.lo[2] + "," + p.lo[3] + "],\"g\":[2,1,1]}");
     }
 
     private int[] randomLoadout() {
         int[] primaries = {0, 0, 1, 1, 2, 3, 4, 10, 10, 11, 12};
         int[] secondaries = {5, 5, 6, 7};
         int[] melee = {8, 9, 13};
-        return new int[]{primaries[rnd.nextInt(primaries.length)], secondaries[rnd.nextInt(secondaries.length)], melee[rnd.nextInt(melee.length)]};
+        int p1 = primaries[rnd.nextInt(primaries.length)], p2 = primaries[rnd.nextInt(primaries.length)];
+        while (p2 == p1) p2 = primaries[rnd.nextInt(primaries.length)];
+        return new int[]{p1, p2, secondaries[rnd.nextInt(secondaries.length)], melee[rnd.nextInt(melee.length)]};
     }
 
     // ------------------------------------------------------------ bot: jumlah
@@ -562,7 +571,7 @@ public final class GameServer {
     /** Menembak dengan senjata w. Mengembalikan true bila tembakan benar-benar terjadi. */
     private boolean fire(Player p, int w, double dx, double dy, double dz, boolean ads, long rw) {
         long t = System.currentTimeMillis();
-        if (!p.alive || matchOver) return false;
+        if (!p.alive || matchOver || t < p.frozenUntil) return false;
         if (t - p.lastShot[w] < WeaponDefs.RATE[w] * 0.8) return false;
         double L = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (L < 1e-6) return false;
@@ -675,6 +684,7 @@ public final class GameServer {
                     matchOver = false;
                     for (Player q : players.values()) { q.kills = 0; q.deaths = 0; }
                     for (Player q : players.values()) spawn(q);
+                    nades.clear(); smokes.clear();
                     broadcast("{\"t\":\"reset\"}", null);
                 }
             }
@@ -731,7 +741,7 @@ public final class GameServer {
                 me.yaw = num(m.get("yaw"), -1000, 1000, me.yaw);
                 me.pitch = num(m.get("pitch"), -1.6, 1.6, me.pitch);
                 int w = (int) num(m.get("w"), -1, WeaponDefs.COUNT, -1);
-                if (w == me.lo[0] || w == me.lo[1] || w == me.lo[2]) me.curW = w;
+                if (hasW(me, w)) me.curW = w;
                 long now = System.currentTimeMillis();
                 me.hist.add(new double[]{now, me.x, me.y, me.z});
                 while (!me.hist.isEmpty() && me.hist.get(0)[0] < now - 1000) me.hist.remove(0);
@@ -739,9 +749,13 @@ public final class GameServer {
             }
             if (t.equals("shoot")) {
                 int w = (int) num(m.get("w"), -1, WeaponDefs.COUNT, -1);
-                if (w < 0 || !(w == me.lo[0] || w == me.lo[1] || w == me.lo[2])) return;
+                if (w < 0 || !hasW(me, w)) return;
                 boolean ads = num(m.get("ads"), 0, 1, 0) > 0.5;
                 fire(me, w, num(m.get("dx"), -1, 1, 0), num(m.get("dy"), -1, 1, 0), num(m.get("dz"), -1, 1, 0), ads, (long) num(m.get("rw"), 0, 300, 0));
+                return;
+            }
+            if (t.equals("nade")) {
+                throwNade(me, (int) num(m.get("k"), 0, 2, -1), num(m.get("dx"), -1, 1, 0), num(m.get("dy"), -1, 1, 0), num(m.get("dz"), -1, 1, 0));
                 return;
             }
             if (t.equals("loadout")) {
@@ -836,10 +850,12 @@ public final class GameServer {
         }
     }
 
+    private static int botW(Player b, int slot) { return b.lo[slot == 0 ? 0 : (slot == 1 ? 2 : 3)]; }
+
     private void botThink(Player b, long t) {
         final double dt = TICK_MS / 1000.0;
         int dif = b.diff;
-        if (b.reloadUntil != 0 && t >= b.reloadUntil) { b.mag[b.slot] = WeaponDefs.MAG[b.lo[b.slot]]; b.reloadUntil = 0; }
+        if (b.reloadUntil != 0 && t >= b.reloadUntil) { b.mag[b.slot] = WeaponDefs.MAG[botW(b, b.slot)]; b.reloadUntil = 0; }
 
         // --- cari target
         Player best = null;
@@ -854,6 +870,7 @@ public final class GameServer {
             if (!cone) continue;
             double ty = q.y + 1.2, dy = ty - 1.55, dd = Math.sqrt(d * d + dy * dy);
             if (GameMap.rayWorld(b.x, 1.55, b.z, dx / dd, dy / dd, dz / dd) < dd - 0.6) continue;
+            if (smokeBlocks(b.x, 1.55, b.z, q.x, ty, q.z, t)) continue;
             if (d < bd) { bd = d; best = q; }
         }
         if (best != null) {
@@ -865,7 +882,7 @@ public final class GameServer {
 
         // --- pilih senjata
         if (best != null) {
-            int w0 = b.lo[0], w1 = b.lo[1];
+            int w0 = b.lo[0], w1 = b.lo[2];
             int want;
             if (bd < 2.6) want = 2;
             else if (b.mag[0] > 0 && bd <= WeaponDefs.RANGE[w0] * 0.85) want = 0;
@@ -873,7 +890,7 @@ public final class GameServer {
             else want = (b.mag[0] > 0 || b.reloadUntil != 0) ? 0 : 1;
             if (want != b.slot) { b.slot = want; b.reloadUntil = 0; b.reactAt = Math.max(b.reactAt, t + 250); }
         }
-        int w = b.lo[b.slot];
+        int w = botW(b, b.slot);
         b.curW = w;
 
         // --- isi ulang bila perlu
@@ -966,12 +983,13 @@ public final class GameServer {
         long t = System.currentTimeMillis();
         synchronized (lock) {
             if (humans() == 0) return;
+            stepNades(t, TICK_MS / 1000.0);
             StringBuilder sb = new StringBuilder("{\"t\":\"s\",\"p\":[");
             boolean first = true;
             for (Player p : new ArrayList<>(players.values())) {
                 if (!p.alive && !matchOver && t >= p.respawnAt) spawn(p);
                 if (p.bot && p.alive && !matchOver) {
-                    botThink(p, t);
+                    if (t >= p.frozenUntil) botThink(p, t);
                     p.hist.add(new double[]{t, p.x, p.y, p.z});
                     while (!p.hist.isEmpty() && p.hist.get(0)[0] < t - 1000) p.hist.remove(0);
                 }
@@ -983,6 +1001,105 @@ public final class GameServer {
             }
             sb.append("]}");
             broadcast(sb.toString(), null);
+            if (!nades.isEmpty()) {
+                StringBuilder nb = new StringBuilder("{\"t\":\"n\",\"l\":[");
+                for (int i = 0; i < nades.size(); i++) {
+                    Nade g = nades.get(i);
+                    if (i > 0) nb.append(',');
+                    nb.append('[').append(g.id).append(',').append(g.type).append(',').append(n(g.x)).append(',').append(n(g.y)).append(',').append(n(g.z)).append(']');
+                }
+                broadcast(nb.append("]}").toString(), null);
+            }
+        }
+    }
+
+    // ------------------------------------------------------------ granat
+    private static final class Nade { int id, type, owner; double x, y, z, vx, vy, vz; long fuseAt; }
+    private static final class Smoke { double x, y, z; long until; }
+    private final ArrayList<Nade> nades = new ArrayList<>();
+    private final ArrayList<Smoke> smokes = new ArrayList<>();
+    private int nextNade = 1;
+    private static final long[] NADE_FUSE = {2300, 1500, 1500};
+    private static final double SMOKE_R = 4.5, FROST_R = 7.0, FRAG_R = 8.0;
+    private static final long SMOKE_MS = 12000, FREEZE_MS = 4000;
+
+    private void throwNade(Player p, int k, double dx, double dy, double dz) {
+        long t = System.currentTimeMillis();
+        if (k < 0 || k > 2 || !p.alive || matchOver || t < p.frozenUntil || p.gren[k] <= 0 || t - p.lastNade < 600) return;
+        double L = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (L < 1e-6) return;
+        dx /= L; dy /= L; dz /= L;
+        p.gren[k]--; p.lastNade = t;
+        double ox = p.x, oy = p.y + 1.45, oz = p.z;
+        double free = Math.min(0.6, GameMap.rayWorld(ox, oy, oz, dx, dy, dz) - 0.3);
+        if (free < 0) free = 0;
+        Nade g = new Nade();
+        g.id = nextNade++; g.type = k; g.owner = p.id;
+        g.x = ox + dx * free; g.y = oy + dy * free; g.z = oz + dz * free;
+        g.vx = dx * 16; g.vy = dy * 16 + 3.5; g.vz = dz * 16;
+        g.fuseAt = t + NADE_FUSE[k];
+        nades.add(g);
+        broadcast("{\"t\":\"throw\",\"id\":" + p.id + ",\"k\":" + k + "}", null);
+    }
+
+    private void stepNades(long t, double dt) {
+        for (int i = smokes.size() - 1; i >= 0; i--) if (t >= smokes.get(i).until) smokes.remove(i);
+        for (int i = nades.size() - 1; i >= 0; i--) {
+            Nade g = nades.get(i);
+            if (t >= g.fuseAt) { nades.remove(i); explode(g, t); continue; }
+            g.vy -= 18 * dt;
+            double nx = g.x + g.vx * dt, ny = g.y + g.vy * dt, nz = g.z + g.vz * dt;
+            if (GameMap.blocked(nx, g.z, g.y - 1.0)) { g.vx = -g.vx * 0.45; nx = g.x; }
+            if (GameMap.blocked(g.x, nz, g.y - 1.0)) { g.vz = -g.vz * 0.45; nz = g.z; }
+            nx = Math.max(GameMap.MINX + 0.3, Math.min(GameMap.MAXX - 0.3, nx));
+            nz = Math.max(GameMap.MINZ + 0.3, Math.min(GameMap.MAXZ - 0.3, nz));
+            double gnd = GameMap.groundAt(nx, nz, g.y - 0.1) + 0.12;
+            if (ny < gnd) {
+                ny = gnd;
+                g.vy = -g.vy * 0.35;
+                if (Math.abs(g.vy) < 1.6) g.vy = 0;
+                g.vx *= 0.72; g.vz *= 0.72;
+            }
+            g.x = nx; g.y = ny; g.z = nz;
+        }
+    }
+
+    private boolean smokeBlocks(double ax, double ay, double az, double bx, double by, double bz, long t) {
+        for (Smoke s : smokes) {
+            if (t >= s.until) continue;
+            double vx = bx - ax, vy = by - ay, vz = bz - az, l2 = vx * vx + vy * vy + vz * vz;
+            double u = l2 < 1e-9 ? 0 : Math.max(0, Math.min(1, ((s.x - ax) * vx + (s.y - ay) * vy + (s.z - az) * vz) / l2));
+            double px = ax + vx * u - s.x, py = ay + vy * u - s.y, pz = az + vz * u - s.z;
+            if (px * px + py * py + pz * pz < SMOKE_R * SMOKE_R) return true;
+        }
+        return false;
+    }
+
+    private void explode(Nade g, long t) {
+        Player owner = players.get(g.owner);
+        broadcast("{\"t\":\"boom\",\"k\":" + g.type + ",\"x\":" + n(g.x) + ",\"y\":" + n(g.y) + ",\"z\":" + n(g.z) + ",\"ms\":" + (g.type == 1 ? SMOKE_MS : 0) + "}", null);
+        if (g.type == 1) {
+            Smoke s = new Smoke(); s.x = g.x; s.y = g.y + 1.2; s.z = g.z; s.until = t + SMOKE_MS;
+            smokes.add(s);
+            return;
+        }
+        double R = g.type == 0 ? FRAG_R : FROST_R;
+        for (Player q : new ArrayList<>(players.values())) {
+            if (!q.alive || q.id == g.owner || t < q.protectUntil) continue;
+            double cx = q.x - g.x, cy = (q.y + 1.0) - (g.y + 0.3), cz = q.z - g.z;
+            double d = Math.sqrt(cx * cx + cy * cy + cz * cz);
+            if (d >= R) continue;
+            if (d > 0.8 && GameMap.rayWorld(g.x, g.y + 0.3, g.z, cx / d, cy / d, cz / d) < d - 0.4) continue;
+            if (g.type == 0) {
+                int dmg = (int) Math.round(130 * (1 - d / R));
+                if (dmg < 8) dmg = 8;
+                if (owner != null) damage(owner, q, dmg, false, 14);
+                else { q.hp -= dmg; if (q.hp <= 0) { q.hp = 0; q.alive = false; q.deaths++; q.respawnAt = t + RESPAWN_MS; broadcast("{\"t\":\"kill\",\"k\":-1,\"v\":" + q.id + ",\"h\":0,\"w\":14}", null); } }
+            } else {
+                q.frozenUntil = t + FREEZE_MS;
+                broadcast("{\"t\":\"freeze\",\"id\":" + q.id + ",\"ms\":" + FREEZE_MS + "}", null);
+                if (owner != null && q.bot) botHurt(q, owner, t);
+            }
         }
     }
 }
