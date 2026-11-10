@@ -317,7 +317,7 @@
   }
   function setRot(name, rx, ry, rz) { var r = CH.rot[BONE[name]]; if (r) { r[0] = rx || 0; r[1] = ry || 0; r[2] = rz || 0; } }
   // pose: ph = fase langkah, mv = 0..1, pitch = arah bidik, sw = fraksi ayunan melee (0..1, <0 = tidak ada), melee
-  function poseChar(ph, mv, pitch, sw, melee) {
+  function poseChar(ph, mv, pitch, sw, melee, sc, sp) {
     var i, c = CH, a = mv * 0.7 * Math.sin(ph), arc = sw >= 0 && sw <= 1 ? sw : -1;
     for (i = 0; i < NBONE; i++) { c.rot[i][0] = c.rot[i][1] = c.rot[i][2] = 0; }
     setRot('LeftUpLeg', a, 0, 0); setRot('RightUpLeg', -a, 0, 0);
@@ -335,6 +335,14 @@
       setRot('RightArm', 0.0 + chop * 0.6, 1.2, -0.3); setRot('RightForeArm', 0, 0.15, 0); setRot('RightHand', 0, 0, 0);
       setRot('LeftArm', 0, 0, 1.2); setRot('LeftForeArm', 0, -0.35, 0); setRot('LeftHand', 0, 0, 0);
       setRot('Spine', pitch * 0.12, 0.25 + mv * 0.08 * Math.sin(ph), 0);
+    }
+    if (sc > 0.01 || sp > 0.01) {
+      var lg = Math.max(sc, sp), wk = 1 - lg;
+      setRot('LeftUpLeg', a * wk * 0.5 + sc * 1.35, 0, 0); setRot('RightUpLeg', -a * wk * 0.5 + sc * 1.35, 0, 0);
+      setRot('LeftLeg', -sc * 1.9 - sp * 0.1, 0, 0); setRot('RightLeg', -sc * 1.9 - sp * 0.1, 0, 0);
+      setRot('LeftFoot', sc * 0.5, 0, 0); setRot('RightFoot', sc * 0.5, 0, 0);
+      if (sp > 0.01) { setRot('LeftUpLeg', a * 0.4, 0, 0.12 * sp); setRot('RightUpLeg', -a * 0.4, 0, -0.12 * sp); }
+      setRot('Spine', pitch * 0.12 + sc * 0.35, 0, 0);
     }
     var M = c.M, tmp, k, b, par, R, p;
     for (k = 0; k < NBONE; k++) {
@@ -384,13 +392,14 @@
   var S = {
     ws: null, id: 0, playing: false, paused: false, alive: false, hp: 100, kills: 0, deaths: 0,
     killLimit: 15, matchOver: false, bots: 0, diff: 1, x: 0, y: 0, z: 0, vy: 0, onGround: true, yaw: 0, pitch: 0, ping: 30,
-    lo: DEF_LO.slice(), slot: 0, mag: [0, 0, 0, 0], res: [0, 0, 0, 0], gren: [2, 1, 1], frozenUntil: 0, lastNade: 0, reloading: false, reloadEnd: 0, reloadStart: 0,
+    lo: DEF_LO.slice(), slot: 0, mag: [0, 0, 0, 0], res: [0, 0, 0, 0], gren: [2, 2, 2], held: -1, throwT: 0, frozenUntil: 0, lastNade: 0, reloading: false, reloadEnd: 0, reloadStart: 0,
     climb: false, stance: 0, eyeH: 1.55, switchEnd: 0, ads: false, adsT: 0, latch: false, lastFire: [0, 0, 0, 0], swingT: -999, deathAt: 0, killer: -1, killerW: 0
   };
   var pick = DEF_LO.slice();    // pilihan di lobi
   var roster = {}, remotes = {};
   var keys = {}, fireHeld = false, jumpQueued = false, stick = { x: 0, y: 0 };
   var beams = [], sparks = [], dmgDirs = [];
+  var mmCan = null, mmCtx = null, mmN = 0;
   var nadeSt = {}, booms = [], smokeZ = [], froz = {};
   var recoil = 0, flashT = 0, flashA = 0, hitT = -999, hitKill = false, hitHead = false, muzzleT = 0, bobT = 0;
   var W = 0, H = 0, DPR = 1, VP = null, eyeNow = [0, 0, 0], fovNow = 1.2;
@@ -516,7 +525,7 @@
     S.lo = lo.slice();
     S.slot = 0;
     for (var i = 0; i < 4; i++) { S.mag[i] = WP[lo[i]].mag; S.res[i] = WP[lo[i]].res; S.lastFire[i] = 0; }
-    S.gren = [2, 1, 1]; S.frozenUntil = 0; updateNadeBtns();
+    S.gren = [2, 2, 2]; S.held = -1; S.frozenUntil = 0; updateNadeBtns();
     S.reloading = false; S.ads = false; S.adsT = 0; S.switchEnd = performance.now() + 300; S.latch = false;
     buildSlots();
   }
@@ -548,15 +557,21 @@
             continue;
           }
           var r = remotes[id] || (remotes[id] = { buf: [], alive: true, hp: 100, kills: 0, deaths: 0, w: 0, fired: -99999, fl: -999 });
-          r.buf.push({ t: now, x: p[1], y: p[2], z: p[3], yaw: p[4], pitch: p[5] });
-          if (r.buf.length > 24) r.buf.shift();
+          var lb = r.buf[r.buf.length - 1], st = p[11] | 0;
+          if (!lb || lb.x !== p[1] || lb.y !== p[2] || lb.z !== p[3] || lb.yaw !== p[4] || lb.pitch !== p[5] || lb.st !== st) {
+            if (!r.tl || now - r.tl > 250) { r.tt = now; r.avg = 40; }
+            else { r.avg += (Math.min(now - r.tl, 100) - r.avg) * 0.15; r.tt += r.avg; r.tt += (now - r.tt) * 0.05; if (r.tt > now) r.tt = now; if (r.tt < now - 120) r.tt = now - 120; }
+            r.tl = now;
+            r.buf.push({ t: r.tt, x: p[1], y: p[2], z: p[3], yaw: p[4], pitch: p[5], st: st });
+            if (r.buf.length > 24) r.buf.shift();
+          }
           r.hp = p[6]; r.alive = !!p[7]; r.kills = p[8]; r.deaths = p[9]; r.w = p[10] >= 0 ? p[10] : r.w;
         }
         break;
       case 'respawn':
         S.climb = false; S.stance = 0; S.eyeH = EYE;
         S.x = m.x; S.y = m.y; S.z = m.z; S.yaw = m.yaw; S.pitch = 0; S.vy = 0; S.onGround = true;
-        S.alive = true; S.hp = 100; fireHeld = false; S.frozenUntil = 0; froz = {};
+        S.alive = true; S.hp = 100; fireHeld = false; S.frozenUntil = 0; S.held = -1; updateNadeBtns(); froz = {};
         if (m.lo) setLoadout(m.lo);
         if (m.g) { S.gren = m.g.slice(); updateNadeBtns(); }
         dmgDirs.length = 0;
@@ -587,7 +602,7 @@
         dmgDirs.push({ ax: m.ax, az: m.az, t: now });
         beep(110, 0.16, 'sawtooth', 0.2, 0.5);
         if (m.hp <= 0) {
-          S.alive = false; S.climb = false; S.stance = 0; S.hp = 0; fireHeld = false; S.ads = false; S.deathAt = now; S.killer = m.a; S.killerW = m.w;
+          S.alive = false; S.climb = false; S.stance = 0; S.hp = 0; S.held = -1; updateNadeBtns(); fireHeld = false; S.ads = false; S.deathAt = now; S.killer = m.a; S.killerW = m.w;
           $('dwho').textContent = 'Dikalahkan ' + nameOf(m.a);
           show('dead', true);
         }
@@ -610,16 +625,63 @@
       var b = $('bN' + k); if (!b) continue;
       b.lastElementChild.textContent = S.gren[k];
       b.classList.toggle('empty', S.gren[k] <= 0);
+      b.classList.toggle('held', S.held === k);
     }
+  }
+  // tekan tombol granat = pegang dulu; tekan lagi = batal; tembak = lempar
+  function equipNade(k) {
+    var now = performance.now();
+    if (!S.playing || !S.alive || S.paused || S.matchOver || now < S.frozenUntil) return;
+    if (S.held === k) { S.held = -1; updateNadeBtns(); return; }
+    if (S.gren[k] <= 0) { toast('Granat habis'); return; }
+    S.held = k; S.reloading = false; S.ads = false; S.switchEnd = now + 220; S.latch = true; updateNadeBtns();
+    beep(380, 0.05, 'triangle', 0.06, 0.6);
   }
   function throwNade(k) {
     var now = performance.now();
     if (!S.playing || !S.alive || S.paused || S.matchOver || now < S.frozenUntil || S.gren[k] <= 0 || now - S.lastNade < 650) return;
-    S.lastNade = now; S.gren[k]--;
+    S.lastNade = now; S.gren[k]--; S.throwT = now; S.held = -1; S.noFire = true;
     var d = dirOf(S.yaw, S.pitch);
     send({ t: 'nade', k: k, dx: d[0], dy: d[1], dz: d[2] });
     updateNadeBtns();
     beep(220, 0.08, 'triangle', 0.1, 0.6);
+  }
+  // model granat (detail): k 0 = ledak, 1 = asap, 2 = beku
+  function nadeParts(k, arr) {
+    function o(cx, cy, cz, hx, hy, hz, col, yaw) { pushBox(arr, 0, 0, 0, yaw || 0, cx, cy, cz, hx, hy, hz, col, false); }
+    var i, steel = [0.62, 0.64, 0.68], dark = [0.16, 0.17, 0.19], brass = [0.85, 0.7, 0.25];
+    if (k === 0) {
+      var g1 = [0.30, 0.42, 0.20], g2 = [0.22, 0.32, 0.15];
+      o(0, 0, 0, 0.034, 0.05, 0.034, g1); o(0, 0, 0, 0.034, 0.05, 0.034, g1, 0.785);
+      o(0, 0.03, 0, 0.026, 0.03, 0.026, g1); o(0, 0.03, 0, 0.026, 0.03, 0.026, g1, 0.785);
+      o(0, -0.03, 0, 0.028, 0.03, 0.028, g1); o(0, -0.03, 0, 0.028, 0.03, 0.028, g1, 0.785);
+      for (i = -2; i <= 2; i++) { o(0, i * 0.022, 0, 0.0365, 0.004, 0.0365, g2); o(0, i * 0.022, 0, 0.0365, 0.004, 0.0365, g2, 0.785); }
+      for (i = -1; i <= 1; i += 2) { o(i * 0.0185, 0, 0, 0.003, 0.06, 0.0365, g2, 0.2 * i); o(0, 0, i * 0.0185, 0.0365, 0.06, 0.003, g2); }
+      o(0, 0.064, 0, 0.016, 0.014, 0.016, steel); o(0, 0.078, 0, 0.011, 0.008, 0.011, dark);
+      o(0.03, 0.01, 0, 0.005, 0.07, 0.013, steel);                 // tuas pengaman
+      o(0.02, 0.078, 0, 0.018, 0.005, 0.012, steel);
+      o(-0.022, 0.07, 0.0, 0.012, 0.003, 0.012, brass); o(-0.034, 0.07, 0, 0.003, 0.003, 0.009, brass); o(-0.022, 0.07, 0.009, 0.012, 0.003, 0.003, brass); o(-0.022, 0.07, -0.009, 0.012, 0.003, 0.003, brass); // cincin pin
+    } else if (k === 1) {
+      var gr = [0.55, 0.57, 0.6], wh = [0.92, 0.92, 0.94];
+      o(0, 0, 0, 0.03, 0.07, 0.03, gr); o(0, 0, 0, 0.03, 0.07, 0.03, gr, 0.785);
+      o(0, 0.02, 0, 0.0325, 0.012, 0.0325, wh); o(0, 0.02, 0, 0.0325, 0.012, 0.0325, wh, 0.785);
+      o(0, -0.02, 0, 0.0325, 0.006, 0.0325, [0.8, 0.25, 0.2]); o(0, -0.02, 0, 0.0325, 0.006, 0.0325, [0.8, 0.25, 0.2], 0.785);
+      o(0, 0.076, 0, 0.024, 0.008, 0.024, dark); o(0, 0.076, 0, 0.024, 0.008, 0.024, dark, 0.785);
+      o(0, 0.09, 0, 0.012, 0.01, 0.012, steel);
+      for (i = 0; i < 4; i++) o(Math.cos(i * 1.571) * 0.014, 0.085, Math.sin(i * 1.571) * 0.014, 0.005, 0.004, 0.005, dark);
+      o(0.034, 0.02, 0, 0.004, 0.065, 0.012, steel); o(0.02, 0.092, 0, 0.016, 0.004, 0.011, steel);
+      o(-0.02, 0.095, 0, 0.011, 0.003, 0.011, brass); o(-0.03, 0.095, 0, 0.003, 0.003, 0.008, brass);
+    } else {
+      var ic = [0.45, 0.78, 0.95], ic2 = [0.8, 0.95, 1];
+      o(0, 0, 0, 0.036, 0.05, 0.036, ic); o(0, 0, 0, 0.036, 0.05, 0.036, ic, 0.785);
+      o(0, 0.03, 0, 0.026, 0.03, 0.026, ic2); o(0, 0.03, 0, 0.026, 0.03, 0.026, ic2, 0.785);
+      o(0, -0.03, 0, 0.026, 0.03, 0.026, ic2); o(0, -0.03, 0, 0.026, 0.03, 0.026, ic2, 0.785);
+      o(0, 0, 0, 0.0385, 0.008, 0.0385, [1, 1, 1]); o(0, 0, 0, 0.0385, 0.008, 0.0385, [1, 1, 1], 0.785);
+      for (i = 0; i < 6; i++) { var an = i * 1.047; o(Math.cos(an) * 0.038, (i % 2 ? 0.02 : -0.018), Math.sin(an) * 0.038, 0.007, 0.018, 0.007, ic2, an); }
+      o(0, 0.066, 0, 0.016, 0.014, 0.016, steel); o(0, 0.08, 0, 0.011, 0.008, 0.011, dark);
+      o(0.036, 0.01, 0, 0.005, 0.07, 0.013, steel); o(0.022, 0.08, 0, 0.018, 0.005, 0.012, steel);
+      o(-0.022, 0.072, 0, 0.012, 0.003, 0.012, brass); o(-0.034, 0.072, 0, 0.003, 0.003, 0.009, brass);
+    }
   }
   function addBoom(m, now) {
     var k = m.k, i, dist = Math.hypot(m.x - S.x, m.z - S.z), vol = Math.max(0, 1 - dist / 70);
@@ -777,11 +839,13 @@
   }
   function switchTo(i) {
     if (!S.alive || S.matchOver || i === S.slot || i < 0 || i > 3) return;
+    S.held = -1; updateNadeBtns();
     S.slot = i; S.reloading = false; S.ads = false; S.switchEnd = performance.now() + 260; S.latch = true;
     beep(420, 0.04, 'triangle', 0.05);
   }
   function startReload(now) {
     var w = wdef();
+    if (S.held >= 0) return;
     if (w.slot === 2 || S.reloading || !S.alive || S.mag[S.slot] >= w.mag) return;
     if (S.res[S.slot] <= 0) { if (S.mag[S.slot] <= 0) toast('Peluru habis'); return; }
     S.reloading = true; S.reloadStart = now; S.reloadEnd = now + w.reload; S.ads = false;
@@ -800,7 +864,10 @@
     S.adsT = Math.max(0, Math.min(1, S.adsT + (S.ads && cur.slot !== 2 && !S.reloading ? 1 : -1) * (scoped ? 0.12 : 0.18)));
   }
   function tryFire(now) {
+    if (!fireHeld) S.noFire = false;
     if (!fireHeld || !S.alive || S.paused || S.matchOver || now < S.switchEnd || S.reloading || now < S.frozenUntil) return;
+    if (S.noFire) return;
+    if (S.held >= 0) { if (!S.latch) { S.latch = true; throwNade(S.held); } return; }
     var w = wdef(), sl = S.slot;
     if (now - S.lastFire[sl] < w.rate) return;
     if (!w.auto && S.latch) return;
@@ -818,7 +885,7 @@
   }
 
   // ================= remote: interpolasi =================
-  var INTERP = 100;
+  var INTERP = 110;
   function poseOf(r, now) {
     var b = r.buf; if (!b.length) return null;
     var T = now - INTERP, i;
@@ -827,7 +894,7 @@
       if (b[i - 1].t <= T) {
         var a = b[i - 1], c = b[i], k = c.t === a.t ? 1 : Math.min(1, (T - a.t) / (c.t - a.t));
         var dy = ((c.yaw - a.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-        return { x: a.x + (c.x - a.x) * k, y: a.y + (c.y - a.y) * k, z: a.z + (c.z - a.z) * k, yaw: a.yaw + dy * k, pitch: a.pitch + (c.pitch - a.pitch) * k, mv: Math.hypot(c.x - a.x, c.z - a.z) > 0.03 };
+        return { x: a.x + (c.x - a.x) * k, y: a.y + (c.y - a.y) * k, z: a.z + (c.z - a.z) * k, yaw: a.yaw + dy * k, pitch: a.pitch + (c.pitch - a.pitch) * k, mv: Math.hypot(c.x - a.x, c.z - a.z) / Math.max(1, c.t - a.t) > 0.0006, st: c.st | 0 };
       }
     }
     return b[b.length - 1];
@@ -836,9 +903,9 @@
   // ================= render =================
   function resize() {
     rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 11;
-    DPR = Math.min(window.devicePixelRatio || 1, isTouch ? 1.5 : 2);
+    DPR = Math.min(window.devicePixelRatio || 1, isTouch ? 1.25 : 2);
     W = window.innerWidth; H = window.innerHeight;
-    var gd = Math.max(0.5, Math.min((window.devicePixelRatio || 1) * G.res, G.res > 1 ? 3 : (isTouch ? 2.25 : 2.5)));
+    var gd = isTouch ? Math.max(0.5, Math.min(window.devicePixelRatio || 1, 1.5) * G.res) : Math.max(0.5, Math.min((window.devicePixelRatio || 1) * G.res, G.res > 1 ? 3 : 2.5));
     fxc.width = Math.round(W * DPR); fxc.height = Math.round(H * DPR);
     glc.width = Math.round(W * gd); glc.height = Math.round(H * gd);
     fx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -855,8 +922,11 @@
     r.mva = (r.mva || 0) + ((p.mv ? 1 : 0) - (r.mva || 0)) * Math.min(1, dt / 90);
     r.ph = (r.ph || 0) + dt * 0.0105 * r.mva;
     var sw = melee ? (now - r.fl) / 320 : -1;
-    poseChar(r.ph, r.mva, p.pitch || 0, sw, melee);
-    var base = mul(mT(p.x, p.y, p.z), mRy(p.yaw));
+    var tc = p.st === 1 ? 1 : 0, tp = p.st === 2 ? 1 : 0, kk = Math.min(1, dt / 110);
+    r.sc = (r.sc || 0) + (tc - (r.sc || 0)) * kk; r.sp = (r.sp || 0) + (tp - (r.sp || 0)) * kk;
+    poseChar(r.ph, r.mva, p.pitch || 0, sw, melee, r.sc, r.sp);
+    var base = mul(mT(p.x, p.y - 0.4 * r.sc + 0.14 * r.sp, p.z), mRy(p.yaw));
+    if (r.sp > 0.01) base = mul(base, mul(mT(0, 0, 0.85 * r.sp), mRx(-1.5708 * r.sp)));
     setModel(base);
     skinChar(tint, (froz[id] || 0) > now);
     var mdl = WM[w.key];
@@ -916,7 +986,10 @@
     var arr = [], id, i;
     for (id in remotes) {
       var r = remotes[id]; if (!r.alive) continue;
-      var p = poseOf(r, now); if (p) drawPlayer(id, p, r, now);
+      var p = poseOf(r, now); if (!p) continue;
+      var pdx = p.x - S.x, pdz = p.z - S.z, pd2 = pdx * pdx + pdz * pdz;
+      if (S.playing && (pd2 > 8100 || (pd2 > 16 && -Math.sin(S.yaw) * pdx - Math.cos(S.yaw) * pdz < -2))) continue;
+      drawPlayer(id, p, r, now);
     }
     setModel(IDENT);
     for (i = beams.length - 1; i >= 0; i--) {
@@ -934,8 +1007,9 @@
     for (id in nadeSt) {
       var ng = nadeSt[id];
       ng.x += (ng.tx - ng.x) * 0.55; ng.y += (ng.ty - ng.y) * 0.55; ng.z += (ng.tz - ng.z) * 0.55;
-      pushBox(arr, ng.x, ng.y, ng.z, now * 0.009, 0, 0, 0, 0.085, 0.12, 0.085, gcol[ng.k], false);
-      pushBox(arr, ng.x, ng.y + 0.13, ng.z, now * 0.009, 0, 0, 0, 0.04, 0.03, 0.04, [0.15, 0.15, 0.17], false);
+      var na = []; nadeParts(ng.k, na);
+      setModel(mul(mT(ng.x, ng.y, ng.z), mul(mRy(now * 0.006), mul(mRx(now * 0.011), [1.5, 0, 0, 0, 0, 1.5, 0, 0, 0, 0, 1.5, 0, 0, 0, 0, 1]))));
+      drawDyn(na); setModel(IDENT);
     }
     for (i = booms.length - 1; i >= 0; i--) {
       var bo = booms[i], ba = (now - bo.t) / 1000;
@@ -956,7 +1030,19 @@
 
     // senjata di tangan (first person)
     var mdl = WM[cur.key], melee = cur.slot === 2;
-    if (mdl) {
+    if (S.held >= 0 && S.alive) {
+      var hb = S.moving && S.onGround ? Math.sin(bobT) * 0.007 : 0, sw2 = Math.max(0, 1 - (now - S.switchEnd + 220) / 220), tt = S.throwT ? Math.max(0, 1 - (now - S.throwT) / 250) : 0;
+      var hm = mul(mT(0.11, -0.13 + hb - sw2 * 0.25, -0.5), mul(mRy(-0.5), mul(mRx(0.15), [0.95, 0, 0, 0, 0, 0.95, 0, 0, 0, 0, 0.95, 0, 0, 0, 0, 1])));
+      var ha = []; nadeParts(S.held, ha);
+      gl.clear(gl.DEPTH_BUFFER_BIT);
+      gl.uniformMatrix4fv(loc.vp, false, new Float32Array(persp(fov, aspect, 0.02, 10)));
+      gl.uniform3f(loc.light, 0.3, 0.75, 0.6);
+      setModel(hm); drawDyn(ha);
+      var fh = []; // tangan (kepalan)
+      pushBox(fh, 0, 0, 0, 0, 0, 0, 0, 0.02, 0.018, 0.024, [0.93, 0.74, 0.58], false);
+      setModel(mul(mT(0.11, -0.165 + hb - sw2 * 0.25, -0.47), mRy(-0.5))); drawDyn(fh);
+      setModel(IDENT);
+    } else if (mdl) {
       var sz = mdl.size, len = sz[2], t = S.adsT, vm;
       var bob = S.moving && S.onGround ? Math.sin(bobT) * 0.007 : 0, bobx = S.moving && S.onGround ? Math.cos(bobT * 0.5) * 0.005 : 0;
       var rel = 0;
@@ -1092,7 +1178,7 @@
       var dx = p.x - eyeNow[0], dy = p.y + 2.0 - eyeNow[1], dz = p.z - eyeNow[2], dist = Math.hypot(dx, dy, dz);
       if (dist > 45) continue;
       if (MAP.rayWorld(eyeNow[0], eyeNow[1], eyeNow[2], dx / dist, dy / dist, dz / dist) < dist - 0.4) continue;
-      var s = project(p.x, p.y + 2.0, p.z); if (!s) continue;
+      var s = project(p.x, p.y + 2.0 - (p.st === 1 ? 0.4 : p.st === 2 ? 1.5 : 0), p.z); if (!s) continue;
       var nm = nameOf(+id), al = Math.max(0.35, 1 - dist / 55);
       fx.lineWidth = 3; fx.strokeStyle = 'rgba(0,0,0,' + (al * 0.55) + ')'; fx.strokeText(nm, s[0], s[1]);
       fx.fillStyle = 'rgba(255,255,255,' + al + ')'; fx.fillText(nm, s[0], s[1]);
@@ -1136,7 +1222,16 @@
       fx.strokeStyle = 'rgba(255,91,91,' + (1 - age) * 0.9 + ')'; fx.lineWidth = 5;
       fx.beginPath(); fx.arc(cx, cy, Math.min(W, H) * 0.24, th - 0.22, th + 0.22); fx.stroke();
     }
-    drawMinimap(now);
+    mmN++;
+    var u = H / 896, mw = Math.ceil(312 * u + 4), mh = Math.ceil(240 * u);
+    if (!mmCan || mmCan.width !== Math.round(mw * DPR) || mmCan.height !== Math.round(mh * DPR)) {
+      mmCan = document.createElement('canvas'); mmCan.width = Math.round(mw * DPR); mmCan.height = Math.round(mh * DPR); mmCtx = mmCan.getContext('2d'); mmN = 0;
+    }
+    if (mmN % 3 === 1) {
+      var realFx = fx; fx = mmCtx; fx.setTransform(DPR, 0, 0, DPR, 0, 0); fx.clearRect(0, 0, mw, mh);
+      try { drawMinimap(now); } finally { fx = realFx; }
+    }
+    fx.drawImage(mmCan, 0, 0, mw, mh);
   }
 
   // ================= loop =================
@@ -1152,9 +1247,9 @@
         S.yaw = ((S.yaw + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
         tickWeapon(now);
         tryFire(now);
-        if (now - lastSend > 50) {
+        if (now - lastSend > 30) {
           lastSend = now;
-          send({ t: 'state', x: +S.x.toFixed(3), y: +S.y.toFixed(3), z: +S.z.toFixed(3), yaw: +S.yaw.toFixed(3), pitch: +S.pitch.toFixed(3), w: S.lo[S.slot] });
+          send({ t: 'state', x: +S.x.toFixed(3), y: +S.y.toFixed(3), z: +S.z.toFixed(3), yaw: +S.yaw.toFixed(3), pitch: +S.pitch.toFixed(3), w: S.lo[S.slot], st: S.stance });
         }
       }
       recoil = Math.max(0, recoil - dt * 8);
@@ -1179,9 +1274,9 @@
     if (e.code === 'Digit2') switchTo(1);
     if (e.code === 'Digit3') switchTo(2);
     if (e.code === 'Digit4') switchTo(3);
-    if (e.code === 'KeyG') throwNade(0);
-    if (e.code === 'KeyV') throwNade(1);
-    if (e.code === 'KeyB') throwNade(2);
+    if (e.code === 'KeyG') equipNade(0);
+    if (e.code === 'KeyV') equipNade(1);
+    if (e.code === 'KeyB') equipNade(2);
     keys[e.code] = true;
   });
   document.addEventListener('keyup', function (e) {
@@ -1285,9 +1380,9 @@
       }
     }
   }, { passive: false });
-  bindBtn('bN0', function () { throwNade(0); }, function () {});
-  bindBtn('bN1', function () { throwNade(1); }, function () {});
-  bindBtn('bN2', function () { throwNade(2); }, function () {});
+  bindBtn('bN0', function () { equipNade(0); }, function () {});
+  bindBtn('bN1', function () { equipNade(1); }, function () {});
+  bindBtn('bN2', function () { equipNade(2); }, function () {});
   bindBtn('bJump', function () { jumpQueued = true; S.stance = 0; syncStanceBtns(); }, function () {});
   bindBtn('bRel', function () { startReload(performance.now()); }, function () {});
   bindBtn('bCrouch', function () { toggleStance(1); }, function () {});

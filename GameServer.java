@@ -344,13 +344,14 @@ public final class GameServer {
         String name;
         boolean bot;
         double x, y, z, yaw, pitch;
+        int stance;
         boolean alive = true;
         long respawnAt, protectUntil;
         final long[] lastShot = new long[WeaponDefs.COUNT];
         int[] lo = WeaponDefs.DEFAULT_LO.clone();
         int[] nextLo = WeaponDefs.DEFAULT_LO.clone();
         int curW = WeaponDefs.DEFAULT_LO[0];
-        final int[] gren = {2, 1, 1};     // granat: ledak, asap, beku
+        final int[] gren = {2, 2, 2};     // granat: ledak, asap, beku
         long frozenUntil, lastNade;
         final ArrayList<double[]> hist = new ArrayList<>(); // {t,x,y,z}
 
@@ -470,14 +471,14 @@ public final class GameServer {
         if (p.bot) p.nextLo = randomLoadout();
         p.lo = p.nextLo.clone();
         p.curW = p.lo[0];
-        p.gren[0] = 2; p.gren[1] = 1; p.gren[2] = 1; p.frozenUntil = 0;
+        p.gren[0] = 2; p.gren[1] = 2; p.gren[2] = 2; p.frozenUntil = 0;
         if (p.bot) {
             p.slot = 0;
             for (int i = 0; i < 4; i++) p.mag[i] = WeaponDefs.MAG[p.lo[i]];
             p.reloadUntil = 0; p.targetId = -1; p.haveLast = false; p.path = null;
         }
         p.send("{\"t\":\"respawn\",\"x\":" + n(p.x) + ",\"y\":0,\"z\":" + n(p.z) + ",\"yaw\":" + n(p.yaw) +
-                ",\"lo\":[" + p.lo[0] + "," + p.lo[1] + "," + p.lo[2] + "," + p.lo[3] + "],\"g\":[2,1,1]}");
+                ",\"lo\":[" + p.lo[0] + "," + p.lo[1] + "," + p.lo[2] + "," + p.lo[3] + "],\"g\":[2,2,2]}");
     }
 
     private int[] randomLoadout() {
@@ -742,6 +743,7 @@ public final class GameServer {
                 me.pitch = num(m.get("pitch"), -1.6, 1.6, me.pitch);
                 int w = (int) num(m.get("w"), -1, WeaponDefs.COUNT, -1);
                 if (hasW(me, w)) me.curW = w;
+                me.stance = (int) num(m.get("st"), 0, 2, 0);
                 long now = System.currentTimeMillis();
                 me.hist.add(new double[]{now, me.x, me.y, me.z});
                 while (!me.hist.isEmpty() && me.hist.get(0)[0] < now - 1000) me.hist.remove(0);
@@ -997,7 +999,7 @@ public final class GameServer {
                 first = false;
                 sb.append('[').append(p.id).append(',').append(n(p.x)).append(',').append(n(p.y)).append(',').append(n(p.z)).append(',')
                   .append(n(p.yaw)).append(',').append(n(p.pitch)).append(',').append(p.hp).append(',').append(p.alive ? 1 : 0).append(',')
-                  .append(p.kills).append(',').append(p.deaths).append(',').append(p.curW).append(']');
+                  .append(p.kills).append(',').append(p.deaths).append(',').append(p.curW).append(',').append(p.bot ? 0 : p.stance).append(']');
             }
             sb.append("]}");
             broadcast(sb.toString(), null);
