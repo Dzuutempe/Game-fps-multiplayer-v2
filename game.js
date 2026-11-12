@@ -602,7 +602,7 @@
         dmgDirs.push({ ax: m.ax, az: m.az, t: now });
         beep(110, 0.16, 'sawtooth', 0.2, 0.5);
         if (m.hp <= 0) {
-          S.alive = false; S.climb = false; S.stance = 0; S.hp = 0; S.held = -1; updateNadeBtns(); fireHeld = false; S.ads = false; S.deathAt = now; S.killer = m.a; S.killerW = m.w;
+          S.alive = false; S.climb = false; S.stance = 0; S.hp = 0; S.held = -1; updateNadeBtns(); fireHeld = false; S.ads = false; S.deathAt = now; S.killer = m.a; S.killerW = m.w; S.spec = m.a;
           $('dwho').textContent = 'Dikalahkan ' + nameOf(m.a);
           show('dead', true);
         }
@@ -803,9 +803,11 @@
     else rel.style.visibility = 'hidden';
     if (sbHold && now > sbHold) { sbHold = 0; sbFull = false; }
     updateScoreboard();
+    document.body.classList[S.alive ? 'remove' : 'add']('isdead');
     if (!S.alive) {
-      var left = Math.max(0, 3 - (now - S.deathAt) / 1000);
-      $('dsub').textContent = (WP[S.killerW] ? WP[S.killerW].name + ' · ' : '') + (S.matchOver ? 'ronde selesai' : 'hidup lagi ' + left.toFixed(1) + ' dtk');
+      var left = Math.max(0, 3 - (now - S.deathAt) / 1000), rdy = !S.matchOver && left <= 0;
+      $('dsub').textContent = S.matchOver ? 'Ronde selesai' : (rdy ? 'Siap hidup kembali' : 'Hidup dalam ' + Math.ceil(left) + ' detik lagi');
+      $('dhidup').classList[rdy ? 'add' : 'remove']('rdy');
     }
     $('stat').textContent = fps + ' fps · ' + S.ping + ' ms';
   }
@@ -959,8 +961,18 @@
       tx = LOBBY.x; ty = tgy; tz = LOBBY.z;
       fov = aspect < 1.1 ? 1.2 : 0.85;
     } else {
-      var eyeY = S.y + (S.alive ? S.eyeH : 0.45), d = dirOf(S.yaw, S.pitch);
-      ex = S.x; ey = eyeY; ez = S.z; tx = ex + d[0]; ty = ey + d[1]; tz = ez + d[2];
+      var eyeY = S.y + (S.alive ? S.eyeH : 0.45), d = dirOf(S.yaw, S.pitch), sp = null;
+      if (!S.alive) {
+        var sr = remotes[S.spec];
+        if (!sr || !sr.alive) { sr = null; for (var sk in remotes) if (remotes[sk].alive) { S.spec = +sk; sr = remotes[sk]; break; } }
+        sp = sr ? poseOf(sr, now) : null;
+      }
+      if (sp) {
+        var cdx = Math.sin(sp.yaw), cdz = Math.cos(sp.yaw);
+        ex = sp.x + cdx * 3.2; ey = sp.y + 2.1; ez = sp.z + cdz * 3.2; tx = sp.x; ty = sp.y + 1.2; tz = sp.z;
+      } else {
+        ex = S.x; ey = eyeY; ez = S.z; tx = ex + d[0]; ty = ey + d[1]; tz = ez + d[2];
+      }
       var zoom = 1 + (cur.zoom - 1) * S.adsT;
       fov = 2 * Math.atan(Math.tan(fov / 2) / zoom);
     }
@@ -1135,7 +1147,7 @@
   function drawMinimap(now) {
     var u = H / 896, bx = 0, by = 8.6 * u, bw = 312 * u, bh = 226 * u, cx = bx + bw / 2, cy = by + bh / 2, range = 34, sc = (bh / 2) / range * 1.0;
     fx.save();
-    rrect(fx, bx, by, bw, bh, 16 * u); fx.clip();
+    rrect(fx, bx, by, bw, bh, 0); fx.clip();
     fx.fillStyle = MMCSS; fx.fillRect(bx, by, bw, bh);
     var cs = Math.cos(S.yaw), sn = Math.sin(S.yaw);
     fx.save();
@@ -1159,9 +1171,9 @@
     fx.fillStyle = '#fff'; fx.beginPath(); fx.moveTo(cx, cy - a * 1.3); fx.lineTo(cx + a, cy + a); fx.lineTo(cx, cy + a * 0.45); fx.lineTo(cx - a, cy + a); fx.closePath(); fx.fill();
     fx.restore();
     // bingkai & kilau minimap (posisi tetap)
-    fx.save(); rrect(fx, bx, by, bw, bh, 16 * u);
+    fx.save(); rrect(fx, bx, by, bw, bh, 0);
     fx.lineWidth = 2 * u; fx.strokeStyle = 'rgba(255,255,255,.55)'; fx.stroke();
-    fx.lineWidth = 1 * u; fx.strokeStyle = 'rgba(0,0,0,.35)'; rrect(fx, bx + 2 * u, by + 2 * u, bw - 4 * u, bh - 4 * u, 14 * u); fx.stroke();
+    fx.lineWidth = 1 * u; fx.strokeStyle = 'rgba(0,0,0,.35)'; rrect(fx, bx + 2 * u, by + 2 * u, bw - 4 * u, bh - 4 * u, 0); fx.stroke();
     fx.restore();
   }
 
@@ -1423,6 +1435,7 @@
   }
   function openWeapons() { buildMenu(); show('wpanel', true); }
   $('dchange').addEventListener('click', function () { openMenu('change'); });
+  $('dhidup').addEventListener('click', function () { if (!S.alive && !S.matchOver && $('dhidup').classList.contains('rdy')) send({ t: 'respawn' }); });
   $('tw').addEventListener('click', openWeapons);
   $('th').addEventListener('click', function () { show('hpanel', true); });
   $('mHelp').addEventListener('click', function () { show('hpanel', true); });

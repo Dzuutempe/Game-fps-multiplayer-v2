@@ -760,6 +760,10 @@ public final class GameServer {
                 throwNade(me, (int) num(m.get("k"), 0, 2, -1), num(m.get("dx"), -1, 1, 0), num(m.get("dy"), -1, 1, 0), num(m.get("dz"), -1, 1, 0));
                 return;
             }
+            if (t.equals("respawn")) {
+                if (!me.alive && !matchOver && System.currentTimeMillis() >= me.respawnAt) spawn(me);
+                return;
+            }
             if (t.equals("loadout")) {
                 me.nextLo = parseLoadout(m.get("lo"), me.nextLo);
             }
@@ -989,7 +993,7 @@ public final class GameServer {
             StringBuilder sb = new StringBuilder("{\"t\":\"s\",\"p\":[");
             boolean first = true;
             for (Player p : new ArrayList<>(players.values())) {
-                if (!p.alive && !matchOver && t >= p.respawnAt) spawn(p);
+                if (!p.alive && !matchOver && p.bot && t >= p.respawnAt) spawn(p);
                 if (p.bot && p.alive && !matchOver) {
                     if (t >= p.frozenUntil) botThink(p, t);
                     p.hist.add(new double[]{t, p.x, p.y, p.z});
