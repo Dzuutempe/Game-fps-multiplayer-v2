@@ -392,7 +392,7 @@
   var S = {
     ws: null, id: 0, playing: false, paused: false, alive: false, hp: 100, kills: 0, deaths: 0,
     killLimit: 15, matchOver: false, bots: 0, diff: 1, x: 0, y: 0, z: 0, vy: 0, onGround: true, yaw: 0, pitch: 0, ping: 30,
-    lo: DEF_LO.slice(), slot: 0, mag: [0, 0, 0, 0], res: [0, 0, 0, 0], gren: [2, 2, 2], held: -1, throwT: 0, frozenUntil: 0, lastNade: 0, reloading: false, reloadEnd: 0, reloadStart: 0,
+    lo: DEF_LO.slice(), slot: 0, mag: [0, 0, 0, 0], res: [0, 0, 0, 0], gren: [2, 2, 2], med: 5, held: -1, throwT: 0, frozenUntil: 0, lastNade: 0, reloading: false, reloadEnd: 0, reloadStart: 0,
     climb: false, stance: 0, eyeH: 1.55, switchEnd: 0, ads: false, adsT: 0, latch: false, lastFire: [0, 0, 0, 0], swingT: -999, deathAt: 0, killer: -1, killerW: 0
   };
   var pick = DEF_LO.slice();    // pilihan di lobi
@@ -525,7 +525,7 @@
     S.lo = lo.slice();
     S.slot = 0;
     for (var i = 0; i < 4; i++) { S.mag[i] = WP[lo[i]].mag; S.res[i] = WP[lo[i]].res; S.lastFire[i] = 0; }
-    S.gren = [2, 2, 2]; S.held = -1; S.frozenUntil = 0; updateNadeBtns();
+    S.gren = [2, 2, 2]; S.med = 5; S.held = -1; S.frozenUntil = 0; updateNadeBtns();
     S.reloading = false; S.ads = false; S.adsT = 0; S.switchEnd = performance.now() + 300; S.latch = false;
     buildSlots();
   }
@@ -573,7 +573,8 @@
         S.x = m.x; S.y = m.y; S.z = m.z; S.yaw = m.yaw; S.pitch = 0; S.vy = 0; S.onGround = true;
         S.alive = true; S.hp = 100; fireHeld = false; S.frozenUntil = 0; S.held = -1; updateNadeBtns(); froz = {};
         if (m.lo) setLoadout(m.lo);
-        if (m.g) { S.gren = m.g.slice(); updateNadeBtns(); }
+        if (m.g) { S.gren = m.g.slice(); }
+        S.med = m.md != null ? m.md : 5; updateNadeBtns();
         dmgDirs.length = 0;
         show('dead', false);
         break;
@@ -627,6 +628,7 @@
       b.classList.toggle('empty', S.gren[k] <= 0);
       b.classList.toggle('held', S.held === k);
     }
+    var mb = $('bMed'); if (mb) { mb.lastElementChild.textContent = S.med; mb.classList.toggle('empty', S.med <= 0); }
   }
   // tekan tombol granat = pegang dulu; tekan lagi = batal; tembak = lempar
   function equipNade(k) {
@@ -1392,6 +1394,12 @@
       }
     }
   }, { passive: false });
+  bindBtn('bMed', function () {
+    if (!S.playing || !S.alive || S.paused || S.matchOver) return;
+    if (S.med <= 0) { toast('Medkit habis'); return; }
+    if (S.hp >= 100) { toast('HP sudah penuh'); return; }
+    send({ t: 'med' });
+  }, function () {});
   bindBtn('bN0', function () { equipNade(0); }, function () {});
   bindBtn('bN1', function () { equipNade(1); }, function () {});
   bindBtn('bN2', function () { equipNade(2); }, function () {});

@@ -351,6 +351,7 @@ public final class GameServer {
         int[] lo = WeaponDefs.DEFAULT_LO.clone();
         int[] nextLo = WeaponDefs.DEFAULT_LO.clone();
         int curW = WeaponDefs.DEFAULT_LO[0];
+        int med = 5; long lastMed;
         final int[] gren = {2, 2, 2};     // granat: ledak, asap, beku
         long frozenUntil, lastNade;
         final ArrayList<double[]> hist = new ArrayList<>(); // {t,x,y,z}
@@ -471,14 +472,14 @@ public final class GameServer {
         if (p.bot) p.nextLo = randomLoadout();
         p.lo = p.nextLo.clone();
         p.curW = p.lo[0];
-        p.gren[0] = 2; p.gren[1] = 2; p.gren[2] = 2; p.frozenUntil = 0;
+        p.gren[0] = 2; p.gren[1] = 2; p.gren[2] = 2; p.frozenUntil = 0; p.med = 5;
         if (p.bot) {
             p.slot = 0;
             for (int i = 0; i < 4; i++) p.mag[i] = WeaponDefs.MAG[p.lo[i]];
             p.reloadUntil = 0; p.targetId = -1; p.haveLast = false; p.path = null;
         }
         p.send("{\"t\":\"respawn\",\"x\":" + n(p.x) + ",\"y\":0,\"z\":" + n(p.z) + ",\"yaw\":" + n(p.yaw) +
-                ",\"lo\":[" + p.lo[0] + "," + p.lo[1] + "," + p.lo[2] + "," + p.lo[3] + "],\"g\":[2,2,2]}");
+                ",\"lo\":[" + p.lo[0] + "," + p.lo[1] + "," + p.lo[2] + "," + p.lo[3] + "],\"g\":[2,2,2],\"md\":5}");
     }
 
     private int[] randomLoadout() {
@@ -758,6 +759,14 @@ public final class GameServer {
             }
             if (t.equals("nade")) {
                 throwNade(me, (int) num(m.get("k"), 0, 2, -1), num(m.get("dx"), -1, 1, 0), num(m.get("dy"), -1, 1, 0), num(m.get("dz"), -1, 1, 0));
+                return;
+            }
+            if (t.equals("med")) {
+                long now = System.currentTimeMillis();
+                if (me.alive && !matchOver && me.hp < 100 && me.med > 0 && now - me.lastMed > 1200) {
+                    me.med--; me.lastMed = now; me.hp = Math.min(100, me.hp + 50);
+                    me.send("{\"t\":\"med\",\"hp\":" + me.hp + ",\"m\":" + me.med + "}");
+                }
                 return;
             }
             if (t.equals("respawn")) {
