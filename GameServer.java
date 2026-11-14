@@ -813,7 +813,7 @@ public final class GameServer {
                 long nowE = System.currentTimeMillis();
                 if (nowE - me.lastEmote < 1500) return;
                 me.lastEmote = nowE;
-                broadcast("{\"t\":\"emote\",\"id\":" + me.id + ",\"k\":" + (int) num(m.get("k"), 0, 3, 0) + "}", null);
+                broadcast("{\"t\":\"emote\",\"id\":" + me.id + ",\"k\":" + (int) num(m.get("k"), 0, 4, 0) + "}", null);
                 return;
             }
             if (t.equals("mode")) {
