@@ -39,6 +39,8 @@ public final class GameServer {
     private static final int PROTECT_MS = 1200;
     private static final int RESET_MS = 9000;
     private static final int TICK_MS = 33;
+    private static final double REGEN_SLOW = 1.5, REGEN_FAST = 30;
+    private static final long REGEN_DELAY_MS = 5000;
     private static final String WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
     private static final String[] BOT_NAMES = {"Budi", "Rina", "Joko", "Sari", "Dimas", "Putri", "Agus", "Wati", "Bayu", "Lina", "Tono", "Maya"};
 
@@ -63,6 +65,7 @@ public final class GameServer {
 
     private int nextId = 1;
     private boolean matchOver = false;
+    private int mode = 0; // 0 semua lawan semua, 1 team deathmatch, 2 last man standing
     private ScheduledFuture<?> resetFuture;
 
     private volatile boolean running = false;
@@ -339,7 +342,7 @@ public final class GameServer {
 
     // ------------------------------------------------------------ model pemain
     private static final class Player {
-        int id, color, hp = 100, kills, deaths;
+        long lastEmote; int team; int id, color, hp = 100, kills, deaths;
         Conn conn;                       // null untuk bot
         String name;
         boolean bot;
@@ -351,7 +354,7 @@ public final class GameServer {
         int[] lo = WeaponDefs.DEFAULT_LO.clone();
         int[] nextLo = WeaponDefs.DEFAULT_LO.clone();
         int curW = WeaponDefs.DEFAULT_LO[0];
-        int med = 5; long lastMed;
+        long lastHurt; String look = ""; boolean boost; double regenAcc;
         final int[] gren = {2, 2, 2};     // granat: ledak, asap, beku
         long frozenUntil, lastNade;
         final ArrayList<double[]> hist = new ArrayList<>(); // {t,x,y,z}
@@ -406,9 +409,23 @@ public final class GameServer {
         for (Player p : players.values()) {
             if (!first) sb.append(',');
             first = false;
-            sb.append('[').append(p.id).append(",\"").append(p.name).append("\",").append(p.color).append(',').append(p.bot ? 1 : 0).append(']');
+            sb.append('[').append(p.id).append(",\"").append(p.name).append("\",").append(p.color).append(',').append(p.bot ? 1 : 0).append(",\"").append(p.look).append("\",").append(p.team).append(']');
         }
         return sb.append("]}").toString();
+    }
+
+    private static String cleanLook(Object o) {
+        String s = (o instanceof String) ? (String) o : "";
+        String[] a = s.split(",");
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 8; i++) {
+            int v = 0;
+            try { if (i < a.length) v = Integer.parseInt(a[i].trim()); } catch (NumberFormatException e) { v = 0; }
+            if (v < 0 || v > 15) v = 0;
+            if (i > 0) sb.append(',');
+            sb.append(v);
+        }
+        return sb.toString();
     }
 
     private static String cleanName(Object o, int id) {
@@ -472,14 +489,14 @@ public final class GameServer {
         if (p.bot) p.nextLo = randomLoadout();
         p.lo = p.nextLo.clone();
         p.curW = p.lo[0];
-        p.gren[0] = 2; p.gren[1] = 2; p.gren[2] = 2; p.frozenUntil = 0; p.med = 5;
+        p.gren[0] = 2; p.gren[1] = 2; p.gren[2] = 2; p.frozenUntil = 0; p.lastHurt = 0; p.boost = false; p.regenAcc = 0;
         if (p.bot) {
             p.slot = 0;
             for (int i = 0; i < 4; i++) p.mag[i] = WeaponDefs.MAG[p.lo[i]];
             p.reloadUntil = 0; p.targetId = -1; p.haveLast = false; p.path = null;
         }
         p.send("{\"t\":\"respawn\",\"x\":" + n(p.x) + ",\"y\":0,\"z\":" + n(p.z) + ",\"yaw\":" + n(p.yaw) +
-                ",\"lo\":[" + p.lo[0] + "," + p.lo[1] + "," + p.lo[2] + "," + p.lo[3] + "],\"g\":[2,2,2],\"md\":5}");
+                ",\"lo\":[" + p.lo[0] + "," + p.lo[1] + "," + p.lo[2] + "," + p.lo[3] + "],\"g\":[2,2,2]}");
     }
 
     private int[] randomLoadout() {
@@ -523,6 +540,7 @@ public final class GameServer {
         }
         b.name = name;
         b.color = b.id % 8;
+        assignTeam(b);
         b.nextLo = randomLoadout();
         players.put(b.id, b);
         spawn(b);
@@ -659,21 +677,51 @@ public final class GameServer {
 
     private void damage(Player a, Player v, int dmg, boolean head, int w) {
         if (dmg <= 0 || !v.alive) return;
+        if (mode == 1 && a != v && a.team == v.team) return;
         long t = System.currentTimeMillis();
         int hd = head ? 1 : 0;
-        v.hp -= dmg;
+        v.hp -= dmg; v.lastHurt = t; v.boost = false; v.regenAcc = 0;
         if (v.hp > 0) {
             a.send("{\"t\":\"hit\",\"h\":" + hd + ",\"k\":0,\"d\":" + dmg + "}");
             v.send("{\"t\":\"hurt\",\"hp\":" + v.hp + ",\"ax\":" + n(a.x) + ",\"az\":" + n(a.z) + ",\"a\":" + a.id + ",\"w\":" + w + "}");
             if (v.bot) botHurt(v, a, t);
             return;
         }
-        v.hp = 0; v.alive = false; v.deaths++; v.respawnAt = t + RESPAWN_MS;
+        v.hp = 0; v.alive = false; v.deaths++; v.respawnAt = mode == 2 ? Long.MAX_VALUE : t + RESPAWN_MS;
         a.kills++;
+        if (!a.bot && a.alive) a.boost = true;
         a.send("{\"t\":\"hit\",\"h\":" + hd + ",\"k\":1,\"d\":" + dmg + "}");
         v.send("{\"t\":\"hurt\",\"hp\":0,\"ax\":" + n(a.x) + ",\"az\":" + n(a.z) + ",\"a\":" + a.id + ",\"w\":" + w + "}");
         broadcast("{\"t\":\"kill\",\"k\":" + a.id + ",\"v\":" + v.id + ",\"h\":" + hd + ",\"w\":" + w + "}", null);
-        if (a.kills >= killLimit) endMatch(a);
+        if (mode == 1) {
+            int sc = 0;
+            for (Player q : players.values()) if (q.team == a.team) sc += q.kills;
+            if (sc >= killLimit * 2) endMatch(a);
+        } else if (mode == 2) {
+            int alive = 0; Player last = null;
+            for (Player q : players.values()) if (q.alive) { alive++; last = q; }
+            if (alive <= 1) endMatch(last != null ? last : a);
+        } else if (a.kills >= killLimit) endMatch(a);
+    }
+
+    private void assignTeam(Player p) {
+        int c0 = 0, c1 = 0;
+        for (Player q : players.values()) if (q != p) { if (q.team == 0) c0++; else c1++; }
+        p.team = c0 <= c1 ? 0 : 1;
+    }
+
+    private void setMode(int m) {
+        mode = m;
+        if (resetFuture != null) resetFuture.cancel(false);
+        matchOver = false;
+        for (Player q : players.values()) q.team = -1;
+        for (Player q : players.values()) assignTeam(q);
+        for (Player q : players.values()) { q.kills = 0; q.deaths = 0; }
+        nades.clear(); smokes.clear();
+        broadcast("{\"t\":\"mode\",\"m\":" + mode + "}", null);
+        broadcast(rosterMsg(), null);
+        for (Player q : players.values()) spawn(q);
+        broadcast("{\"t\":\"reset\"}", null);
     }
 
     private void endMatch(Player winner) {
@@ -685,6 +733,7 @@ public final class GameServer {
                 synchronized (lock) {
                     matchOver = false;
                     for (Player q : players.values()) { q.kills = 0; q.deaths = 0; }
+                    if (mode == 1) { for (Player q : players.values()) q.team = -1; for (Player q : players.values()) assignTeam(q); broadcast(rosterMsg(), null); }
                     for (Player q : players.values()) spawn(q);
                     nades.clear(); smokes.clear();
                     broadcast("{\"t\":\"reset\"}", null);
@@ -723,12 +772,14 @@ public final class GameServer {
                 me.conn = conn;
                 me.name = cleanName(m.get("name"), me.id);
                 me.color = me.id % 8;
+                assignTeam(me);
+                me.look = cleanLook(m.get("look"));
                 me.nextLo = parseLoadout(m.get("lo"), WeaponDefs.DEFAULT_LO);
                 conn.player = me;
                 players.put(me.id, me);
                 balanceBots();
                 spawn(me);
-                conn.send("{\"t\":\"welcome\",\"map\":\"" + GameMap.IDS[Math.max(0, GameMap.curId)] + "\",\"id\":" + me.id + ",\"killLimit\":" + killLimit + ",\"matchOver\":" + matchOver +
+                conn.send("{\"t\":\"welcome\",\"map\":\"" + GameMap.IDS[Math.max(0, GameMap.curId)] + "\",\"id\":" + me.id + ",\"mode\":" + mode + ",\"killLimit\":" + killLimit + ",\"matchOver\":" + matchOver +
                         ",\"bots\":" + botsWanted + ",\"diff\":" + difficulty + "}");
                 broadcast(rosterMsg(), null);
                 return;
@@ -757,16 +808,21 @@ public final class GameServer {
                 fire(me, w, num(m.get("dx"), -1, 1, 0), num(m.get("dy"), -1, 1, 0), num(m.get("dz"), -1, 1, 0), ads, (long) num(m.get("rw"), 0, 300, 0));
                 return;
             }
-            if (t.equals("nade")) {
-                throwNade(me, (int) num(m.get("k"), 0, 2, -1), num(m.get("dx"), -1, 1, 0), num(m.get("dy"), -1, 1, 0), num(m.get("dz"), -1, 1, 0));
+            if (t.equals("emote")) {
+                if (!me.alive) return;
+                long nowE = System.currentTimeMillis();
+                if (nowE - me.lastEmote < 1500) return;
+                me.lastEmote = nowE;
+                broadcast("{\"t\":\"emote\",\"id\":" + me.id + ",\"k\":" + (int) num(m.get("k"), 0, 3, 0) + "}", null);
                 return;
             }
-            if (t.equals("med")) {
-                long now = System.currentTimeMillis();
-                if (me.alive && !matchOver && me.hp < 100 && me.med > 0 && now - me.lastMed > 1200) {
-                    me.med--; me.lastMed = now; me.hp = Math.min(100, me.hp + 50);
-                    me.send("{\"t\":\"med\",\"hp\":" + me.hp + ",\"m\":" + me.med + "}");
-                }
+            if (t.equals("mode")) {
+                int nm = (int) num(m.get("m"), 0, 2, 0);
+                if (nm != mode) setMode(nm);
+                return;
+            }
+            if (t.equals("nade")) {
+                throwNade(me, (int) num(m.get("k"), 0, 2, -1), num(m.get("dx"), -1, 1, 0), num(m.get("dy"), -1, 1, 0), num(m.get("dz"), -1, 1, 0));
                 return;
             }
             if (t.equals("respawn")) {
@@ -878,7 +934,7 @@ public final class GameServer {
         double fx = -Math.sin(b.yaw), fz = -Math.cos(b.yaw);
         double viewR = (b.lo[0] == 3 || b.lo[0] == 12) ? 130 : 75;
         for (Player q : players.values()) {
-            if (q == b || !q.alive) continue;
+            if (q == b || !q.alive || (mode == 1 && q.team == b.team)) continue;
             double dx = q.x - b.x, dz = q.z - b.z, d = Math.hypot(dx, dz);
             if (d > viewR) continue;
             boolean cone = d < 7 || q.id == b.targetId || (dx * fx + dz * fz) / Math.max(d, 1e-6) > 0.35;
@@ -999,6 +1055,14 @@ public final class GameServer {
         synchronized (lock) {
             if (humans() == 0) return;
             stepNades(t, TICK_MS / 1000.0);
+            for (Player rp : players.values()) {
+                if (rp.bot || !rp.alive || rp.hp >= 100) { if (rp.hp >= 100) { rp.boost = false; rp.regenAcc = 0; } continue; }
+                double rate = rp.boost ? REGEN_FAST : (t - rp.lastHurt >= REGEN_DELAY_MS ? REGEN_SLOW : 0);
+                if (rate <= 0) continue;
+                rp.regenAcc += rate * (TICK_MS / 1000.0);
+                int add = (int) rp.regenAcc;
+                if (add > 0) { rp.hp = Math.min(100, rp.hp + add); rp.regenAcc -= add; }
+            }
             StringBuilder sb = new StringBuilder("{\"t\":\"s\",\"p\":[");
             boolean first = true;
             for (Player p : new ArrayList<>(players.values())) {
